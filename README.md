@@ -143,7 +143,7 @@ sigfm/
 
 ## Credits
 
-- SIGFM matching library from [libfprint-tod-goodixtls](https://github.com/AshleyWilkes/libfprint-tod-goodixtls), originally by Matthieu Charette, Natasha England-Elbro, and Timur Mangliev
+- SIGFM matching library from [goodix-fp-linux-dev/sigfm](https://github.com/goodix-fp-linux-dev/sigfm), by Matthieu Charette, Natasha England-Elbro, and Timur Mangliev
 - Protocol reverse-engineering from [goodix-fp-linux-dev](https://github.com/goodix-fp-linux-dev)
 
 ## License
