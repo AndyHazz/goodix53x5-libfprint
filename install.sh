@@ -71,5 +71,14 @@ else
     echo ""
 fi
 
+# Install udev rule to prevent cdc_acm from claiming the device
+if [ ! -f /etc/udev/rules.d/91-goodix-fingerprint.rules ]; then
+    echo "Installing udev rule to prevent cdc_acm from claiming the sensor..."
+    sudo cp -v "$SCRIPT_DIR/91-goodix-fingerprint.rules" /etc/udev/rules.d/
+    sudo udevadm control --reload-rules
+else
+    echo "udev rule already installed"
+fi
+
 echo ""
 echo "Done. Now reconfigure and rebuild libfprint."

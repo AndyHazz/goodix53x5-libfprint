@@ -1,0 +1,4 @@
+# Goodix HTK32 fingerprint sensor (27c6:5385)
+# Prevent cdc_acm from claiming the interfaces — the device exposes a CDC
+# descriptor that makes the kernel bind cdc_acm, blocking libfprint.
+ACTION=="bind", SUBSYSTEM=="usb", DRIVER=="cdc_acm", ATTRS{idVendor}=="27c6", ATTRS{idProduct}=="5385", RUN+="/bin/sh -c 'echo %k > /sys/bus/usb/drivers/cdc_acm/unbind 2>/dev/null || true'"
