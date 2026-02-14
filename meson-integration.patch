@@ -1,0 +1,78 @@
+diff --git a/libfprint/meson.build b/libfprint/meson.build
+index ae0f6e2..500d04e 100644
+--- a/libfprint/meson.build
++++ b/libfprint/meson.build
+@@ -147,6 +147,8 @@ driver_sources = {
+         [ 'drivers/synaptics/synaptics.c', 'drivers/synaptics/bmkt_message.c' ],
+     'goodixmoc' :
+         [ 'drivers/goodixmoc/goodix.c', 'drivers/goodixmoc/goodix_proto.c' ],
++    'goodix53x5' :
++        [ 'drivers/goodix53x5/goodix53x5.c', 'drivers/goodix53x5/goodix53x5-proto.c', 'drivers/goodix53x5/goodix53x5-crypto.c', 'drivers/goodix53x5/goodix53x5-device.c' ],
+     'fpcmoc' :
+         [ 'drivers/fpcmoc/fpc.c' ],
+     'realtek' :
+@@ -259,6 +261,24 @@ libnbis = static_library('nbis',
+     ]),
+     install: false)
+ 
++# SIGFM: SIFT-based fingerprint matching for small sensors
++# Link only the OpenCV modules we need (the full opencv4 pkg-config pulls
++# modules like viz/hdf that have missing transitive deps).
++opencv_inc = include_directories('/usr/include/opencv4')
++opencv_core = cc.find_library('opencv_core')
++opencv_features2d = cc.find_library('opencv_features2d')
++opencv_flann = cc.find_library('opencv_flann')
++opencv_imgproc = cc.find_library('opencv_imgproc')
++opencv_dep = declare_dependency(
++    include_directories: opencv_inc,
++    dependencies: [opencv_core, opencv_features2d, opencv_flann, opencv_imgproc],
++)
++libsigfm = static_library('sigfm',
++    'sigfm/sigfm.cpp',
++    dependencies: [opencv_dep],
++    cpp_args: ['-std=c++17'],
++    install: false)
++
+ libfprint_private = static_library('fprint-private',
+     sources: [
+         fpi_enums,
+@@ -272,7 +292,7 @@ libfprint_drivers = static_library('fprint-drivers',
+     sources: drivers_sources,
+     c_args: drivers_cflags,
+     dependencies: deps,
+-    link_with: libfprint_private,
++    link_with: [libfprint_private, libsigfm],
+     install: false)
+ 
+ mapfile = files('libfprint.ver')[0]
+@@ -292,8 +312,8 @@ libfprint = shared_library(versioned_libname.split('lib')[1],
+     version: libversion,
+     link_args : vflag,
+     link_depends : mapfile,
+-    link_with: [libfprint_drivers, libfprint_private],
+-    dependencies: deps,
++    link_with: [libfprint_drivers, libfprint_private, libsigfm],
++    dependencies: deps + [opencv_dep],
+     install: true)
+ 
+ libfprint_dep = declare_dependency(link_with: libfprint,
+diff --git a/meson.build b/meson.build
+index 14fb11f..b4f6101 100644
+--- a/meson.build
++++ b/meson.build
+@@ -140,6 +140,7 @@ default_drivers = [
+     'upeksonly',
+     'upekts',
+     'goodixmoc',
++    'goodix53x5',
+     'nb1010',
+     'fpcmoc',
+     'realtek',
+@@ -210,6 +211,7 @@ driver_helper_mapping = {
+     'aes3500' : [ 'aeslib', 'aes3k' ],
+     'aes4000' : [ 'aeslib', 'aes3k' ],
+     'uru4000' : [ 'openssl' ],
++    'goodix53x5' : [ 'openssl' ],
+     'elanspi' : [ 'udev' ],
+     'virtual_image'          : [ 'virtual' ],
+     'virtual_device'         : [ 'virtual' ],
