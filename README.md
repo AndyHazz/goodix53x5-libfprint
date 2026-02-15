@@ -62,7 +62,17 @@ This automatically unbinds `cdc_acm` when it tries to attach to this device. Wit
 
 ## Installation
 
-### Quick Start
+### Arch Linux (AUR)
+
+```bash
+yay -S libfprint-goodix53x5
+sudo pacman -S fprintd
+sudo systemctl restart fprintd
+```
+
+This builds a patched libfprint with the driver and udev rule included. No manual steps needed.
+
+### Other Distros: Quick Start
 
 ```bash
 # Clone libfprint
