@@ -195,6 +195,25 @@ goodix_rx_cb (FpiUsbTransfer *transfer,
 
   if (error)
     {
+      if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED) &&
+          self->suspended)
+        {
+          /* Suspend cancelled this read — park the SSM and signal completion */
+          g_clear_error (&error);
+          self->blocking_ssm = NULL;
+          fpi_device_suspend_complete (dev, NULL);
+          return;
+        }
+
+      self->blocking_ssm = NULL;
+
+      if (self->suspended)
+        {
+          /* Non-cancellation error during suspend — report it and fail SSM */
+          self->suspended = FALSE;
+          fpi_device_suspend_complete (dev, g_error_copy (error));
+        }
+
       fpi_ssm_mark_failed (transfer->ssm, error);
       return;
     }
@@ -1023,11 +1042,14 @@ goodix_finger_wait_ssm_handler (FpiSsm   *ssm,
 
     case GOODIX_FINGER_WAIT_RECV_EVENT:
       /* Wait for FDT DOWN event with cancellable */
+      self->blocking_ssm = ssm;
+      self->blocking_resume_state = GOODIX_FINGER_WAIT_FDT_DOWN_SETUP;
       goodix_recv_start_cancellable (ssm, dev, self->cancel);
       break;
 
     case GOODIX_FINGER_WAIT_GEN_UP_BASE:
       {
+        self->blocking_ssm = NULL;
         /* Parse FDT event */
         guint8 cat, cmd;
         const guint8 *pl;
@@ -1219,11 +1241,14 @@ goodix_finger_up_ssm_handler (FpiSsm   *ssm,
       break;
 
     case GOODIX_FINGER_UP_RECV_EVENT:
+      self->blocking_ssm = ssm;
+      self->blocking_resume_state = GOODIX_FINGER_UP_FDT_UP_SETUP;
       goodix_recv_start_cancellable (ssm, dev, self->cancel);
       break;
 
     case GOODIX_FINGER_UP_UPDATE_DOWN_BASE:
       {
+        self->blocking_ssm = NULL;
         /* Parse FDT UP event and update fdt_base_down */
         guint8 cat, cmd;
         const guint8 *pl;
@@ -1327,6 +1352,7 @@ goodix_enroll_ssm_done (FpiSsm *ssm, FpDevice *dev, GError *error)
   FpiDeviceGoodix53x5 *self = FPI_DEVICE_GOODIX53X5 (dev);
 
   self->task_ssm = NULL;
+  self->blocking_ssm = NULL;
 
   if (error)
     {
@@ -1556,6 +1582,7 @@ goodix_verify_ssm_done (FpiSsm *ssm, FpDevice *dev, GError *error)
   FpiDeviceAction action = fpi_device_get_current_action (dev);
 
   self->task_ssm = NULL;
+  self->blocking_ssm = NULL;
   g_clear_pointer (&self->captured_image, g_free);
 
   if (error)
@@ -1601,6 +1628,7 @@ goodix_close (FpDevice *dev)
   FpiDeviceGoodix53x5 *self = FPI_DEVICE_GOODIX53X5 (dev);
   GError *error = NULL;
 
+  self->blocking_ssm = NULL;
   g_clear_object (&self->cancel);
   g_clear_pointer (&self->calib_image, g_free);
   g_clear_pointer (&self->fdt_event_data, g_free);
@@ -1677,6 +1705,62 @@ goodix_identify (FpDevice *dev)
 }
 
 static void
+goodix_suspend (FpDevice *dev)
+{
+  FpiDeviceGoodix53x5 *self = FPI_DEVICE_GOODIX53X5 (dev);
+  FpiDeviceAction action = fpi_device_get_current_action (dev);
+
+  if (action != FPI_DEVICE_ACTION_VERIFY &&
+      action != FPI_DEVICE_ACTION_IDENTIFY)
+    {
+      fpi_device_suspend_complete (dev,
+          fpi_device_error_new (FP_DEVICE_ERROR_NOT_SUPPORTED));
+      return;
+    }
+
+  self->suspended = TRUE;
+
+  if (self->blocking_ssm)
+    {
+      /* Cancel the pending read; suspend_complete called from rx callback */
+      g_cancellable_cancel (self->cancel);
+    }
+  else
+    {
+      /* Not in a blocking read (e.g. mid-capture), complete immediately */
+      fpi_device_suspend_complete (dev, NULL);
+    }
+}
+
+static void
+goodix_resume (FpDevice *dev)
+{
+  FpiDeviceGoodix53x5 *self = FPI_DEVICE_GOODIX53X5 (dev);
+  FpiDeviceAction action = fpi_device_get_current_action (dev);
+
+  if (action != FPI_DEVICE_ACTION_VERIFY &&
+      action != FPI_DEVICE_ACTION_IDENTIFY)
+    {
+      fpi_device_resume_complete (dev,
+          fpi_device_error_new (FP_DEVICE_ERROR_NOT_SUPPORTED));
+      return;
+    }
+
+  self->suspended = FALSE;
+  g_clear_object (&self->cancel);
+  self->cancel = g_cancellable_new ();
+
+  /* Restart the SSM from the re-arm state (resubmits USB reads) */
+  if (self->blocking_ssm)
+    {
+      fpi_ssm_jump_to_state (self->blocking_ssm, self->blocking_resume_state);
+      self->blocking_ssm = NULL;
+    }
+
+  fpi_device_resume_complete (dev, NULL);
+}
+
+static void
 goodix_cancel (FpDevice *dev)
 {
   FpiDeviceGoodix53x5 *self = FPI_DEVICE_GOODIX53X5 (dev);
@@ -1719,4 +1803,6 @@ fpi_device_goodix53x5_class_init (FpiDeviceGoodix53x5Class *klass)
   dev_class->verify = goodix_verify;
   dev_class->identify = goodix_identify;
   dev_class->cancel = goodix_cancel;
+  dev_class->suspend = goodix_suspend;
+  dev_class->resume  = goodix_resume;
 }

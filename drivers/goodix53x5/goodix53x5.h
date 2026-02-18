@@ -279,6 +279,11 @@ struct _FpiDeviceGoodix53x5
   /* Task SSM tracking */
   FpiSsm *task_ssm;
 
+  /* Suspend/resume state */
+  gboolean suspended;            /* TRUE between suspend() and resume() calls */
+  FpiSsm  *blocking_ssm;        /* Sub-SSM currently blocked on cancellable read */
+  int      blocking_resume_state; /* SSM state to jump to on resume */
+
   /* Captured 8-bit image from last scan */
   guint8 *captured_image;   /* native 108x88 8-bit LCE-processed */
 
