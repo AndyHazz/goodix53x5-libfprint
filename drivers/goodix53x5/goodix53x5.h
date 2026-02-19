@@ -51,7 +51,7 @@ G_DECLARE_FINAL_TYPE (FpiDeviceGoodix53x5, fpi_device_goodix53x5, FPI,
 #define GOODIX_ENROLL_SAMPLES 8
 
 /* SIGFM (SIFT-based) matching parameters */
-#define GOODIX_SIGFM_THRESHOLD    5    /* minimum sigfm score for match */
+#define GOODIX_SIGFM_THRESHOLD    10   /* minimum sigfm score for match */
 
 /* Timeouts in ms */
 #define GOODIX_CMD_TIMEOUT    1000
