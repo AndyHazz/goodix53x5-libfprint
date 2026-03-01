@@ -51,7 +51,8 @@ G_DECLARE_FINAL_TYPE (FpiDeviceGoodix53x5, fpi_device_goodix53x5, FPI,
 #define GOODIX_ENROLL_SAMPLES 8
 
 /* SIGFM (SIFT-based) matching parameters */
-#define GOODIX_SIGFM_THRESHOLD    10   /* minimum sigfm score for match */
+#define GOODIX_SIGFM_THRESHOLD    10   /* minimum sigfm score per-sample */
+#define GOODIX_SIGFM_MIN_SAMPLES  2    /* minimum enrolled samples above threshold */
 
 /* Timeouts in ms */
 #define GOODIX_CMD_TIMEOUT    1000
@@ -290,6 +291,9 @@ struct _FpiDeviceGoodix53x5
   /* Enrollment tracking */
   GPtrArray *enroll_images; /* array of guint8* native images */
   gint       enroll_stage;
+
+  /* Skip post-enrollment duplicate detection (cleared after first identify) */
+  gboolean   skip_next_identify;
 };
 
 /* --- Protocol functions (goodix53x5-proto.c) --- */

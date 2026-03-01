@@ -1390,6 +1390,13 @@ goodix_enroll_ssm_done (FpiSsm *ssm, FpDevice *dev, GError *error)
   g_clear_pointer (&self->enroll_images, g_ptr_array_unref);
 
   fp_info ("Enrollment complete with %d samples", GOODIX_ENROLL_SAMPLES);
+
+  /* Flag to skip the next identify call — fprintd uses identify for
+   * duplicate detection after enrollment, but SIFT on this 108x88 sensor
+   * produces false cross-finger matches between adjacent fingers on the
+   * same hand.  Real security matching is unaffected. */
+  self->skip_next_identify = TRUE;
+
   fpi_device_enroll_complete (dev, g_object_ref (print), NULL);
 }
 
@@ -1431,6 +1438,7 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
             GPtrArray *gallery = NULL;
             FpPrint *match = NULL;
             int best_score = 0;
+            int best_match_count = 0;
             SigfmImgInfo *probe_info;
 
             fpi_device_get_identify_data (dev, &gallery);
@@ -1454,6 +1462,8 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
                 GVariantIter iter;
                 GVariant *child;
                 int sample_idx = 0;
+                int tmpl_best_score = 0;
+                int tmpl_match_count = 0;
 
                 g_variant_iter_init (&iter, tmpl_data);
                 while ((child = g_variant_iter_next_value (&iter)))
@@ -1474,24 +1484,34 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
                                 i, sample_idx, score);
                         sigfm_free_info (tmpl_info);
 
-                        if (score > best_score)
-                          {
-                            best_score = score;
-                            match = tmpl;
-                          }
+                        if (score >= GOODIX_SIGFM_THRESHOLD)
+                          tmpl_match_count++;
+                        if (score > tmpl_best_score)
+                          tmpl_best_score = score;
+
                         sample_idx++;
                       }
                     g_variant_unref (child);
                   }
                 g_variant_unref (tmpl_data);
+
+                if (tmpl_best_score > best_score)
+                  {
+                    best_score = tmpl_best_score;
+                    best_match_count = tmpl_match_count;
+                    match = tmpl;
+                  }
               }
 
             sigfm_free_info (probe_info);
 
-            fp_dbg ("Identify best SIGFM score: %d (threshold: %d)",
-                    best_score, GOODIX_SIGFM_THRESHOLD);
+            fp_dbg ("Identify best SIGFM score: %d, matching_samples: %d "
+                    "(threshold: %d, min_samples: %d)",
+                    best_score, best_match_count,
+                    GOODIX_SIGFM_THRESHOLD, GOODIX_SIGFM_MIN_SAMPLES);
 
-            if (best_score >= GOODIX_SIGFM_THRESHOLD)
+            if (best_score >= GOODIX_SIGFM_THRESHOLD &&
+                best_match_count >= GOODIX_SIGFM_MIN_SAMPLES)
               fpi_device_identify_report (dev, match, NULL, NULL);
             else
               fpi_device_identify_report (dev, NULL, NULL, NULL);
@@ -1502,6 +1522,7 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
             FpPrint *print = NULL;
             GVariant *data = NULL;
             int best_score = 0;
+            int match_count = 0;
             SigfmImgInfo *probe_info;
             int sample_idx = 0;
 
@@ -1539,6 +1560,8 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
                                 sample_idx, score);
                         sigfm_free_info (tmpl_info);
 
+                        if (score >= GOODIX_SIGFM_THRESHOLD)
+                          match_count++;
                         if (score > best_score)
                           best_score = score;
 
@@ -1551,10 +1574,13 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
 
             sigfm_free_info (probe_info);
 
-            fp_dbg ("Verify best SIGFM score: %d (threshold: %d)",
-                    best_score, GOODIX_SIGFM_THRESHOLD);
+            fp_dbg ("Verify best SIGFM score: %d, matching_samples: %d "
+                    "(threshold: %d, min_samples: %d)",
+                    best_score, match_count,
+                    GOODIX_SIGFM_THRESHOLD, GOODIX_SIGFM_MIN_SAMPLES);
 
-            if (best_score >= GOODIX_SIGFM_THRESHOLD)
+            if (best_score >= GOODIX_SIGFM_THRESHOLD &&
+                match_count >= GOODIX_SIGFM_MIN_SAMPLES)
               fpi_device_verify_report (dev, FPI_MATCH_SUCCESS, NULL, NULL);
             else
               fpi_device_verify_report (dev, FPI_MATCH_FAIL, NULL, NULL);
@@ -1694,6 +1720,19 @@ goodix_identify (FpDevice *dev)
 {
   FpiDeviceGoodix53x5 *self = FPI_DEVICE_GOODIX53X5 (dev);
   FpiSsm *ssm;
+
+  /* Skip post-enrollment duplicate detection entirely — avoids requiring
+   * an extra finger scan just to discard the result.  SIFT on 108x88
+   * produces false cross-finger matches between adjacent fingers on the
+   * same hand, making duplicate detection unreliable. */
+  if (self->skip_next_identify)
+    {
+      self->skip_next_identify = FALSE;
+      fp_dbg ("Identify: skipping post-enrollment duplicate check");
+      fpi_device_identify_report (dev, NULL, NULL, NULL);
+      fpi_device_identify_complete (dev, NULL);
+      return;
+    }
 
   g_clear_object (&self->cancel);
   self->cancel = g_cancellable_new ();
