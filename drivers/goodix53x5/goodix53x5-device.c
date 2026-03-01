@@ -23,6 +23,7 @@
 #include "goodix53x5.h"
 
 #include <string.h>
+#include <math.h>
 
 /* OTP hash lookup table (from driver_53x5.py) */
 static const guint8 otp_hash_table[256] = {
@@ -456,14 +457,73 @@ goodix_device_decode_image (const guint8 *data,
   return image;
 }
 
+#define GAUSS_SIGMA  5.0
+#define GAUSS_RADIUS 15          /* 3 * sigma */
+#define GAUSS_KSIZE  (2 * GAUSS_RADIUS + 1)  /* 31 */
+
+/**
+ * gaussian_blur_separable:
+ *
+ * In-place 2D Gaussian blur via two separable 1D passes.
+ * Input: src (gint array, W×H). Output: dst (double array, W×H).
+ * Uses clamped border handling.
+ */
+static void
+gaussian_blur_separable (const gint *src,
+                         double     *dst,
+                         int         W,
+                         int         H)
+{
+  double kernel[GAUSS_KSIZE];
+  double ksum = 0;
+  double *temp = g_malloc (W * H * sizeof (double));
+
+  /* Build normalized 1D Gaussian kernel */
+  for (int i = 0; i < GAUSS_KSIZE; i++)
+    {
+      double x = i - GAUSS_RADIUS;
+      kernel[i] = exp (-0.5 * x * x / (GAUSS_SIGMA * GAUSS_SIGMA));
+      ksum += kernel[i];
+    }
+  for (int i = 0; i < GAUSS_KSIZE; i++)
+    kernel[i] /= ksum;
+
+  /* Horizontal pass */
+  for (int r = 0; r < H; r++)
+    for (int c = 0; c < W; c++)
+      {
+        double sum = 0;
+        for (int k = -GAUSS_RADIUS; k <= GAUSS_RADIUS; k++)
+          {
+            int cc = CLAMP (c + k, 0, W - 1);
+            sum += src[r * W + cc] * kernel[k + GAUSS_RADIUS];
+          }
+        temp[r * W + c] = sum;
+      }
+
+  /* Vertical pass */
+  for (int r = 0; r < H; r++)
+    for (int c = 0; c < W; c++)
+      {
+        double sum = 0;
+        for (int k = -GAUSS_RADIUS; k <= GAUSS_RADIUS; k++)
+          {
+            int rr = CLAMP (r + k, 0, H - 1);
+            sum += temp[rr * W + c] * kernel[k + GAUSS_RADIUS];
+          }
+        dst[r * W + c] = sum;
+      }
+
+  g_free (temp);
+}
+
 /**
  * goodix_device_image_to_8bit:
  *
- * Convert 12-bit sensor image to 8-bit grayscale with row normalization.
- *
- * The raw sensor output has strong horizontal banding (per-row brightness
- * variation) that dominates the image. Subtracting each row's mean removes
- * this artifact while preserving the fingerprint ridge detail.
+ * Convert 12-bit sensor image to 8-bit grayscale using Gaussian highpass
+ * filtering. Subtracts a Gaussian-blurred version of the image to remove
+ * all low-frequency content (banding, thermal drift, 2D offset patterns)
+ * while preserving fingerprint ridge detail.
  *
  * Returns newly allocated array of GOODIX_SENSOR_PIXELS guint8 values.
  */
@@ -478,36 +538,24 @@ goodix_device_image_to_8bit (const guint16 *img12,
   (void) calib_img;
 
   guint8 *img8 = g_malloc (N);
+  gint *input = g_malloc (N * sizeof (gint));
+  double *blurred = g_malloc (N * sizeof (double));
   gint *corrected = g_malloc (N * sizeof (gint));
   gint corr_min, corr_max;
 
-  /* Pass 1: Remove horizontal banding by subtracting each row's mean */
-  for (int r = 0; r < H; r++)
-    {
-      gint64 row_sum = 0;
-      gint row_mean;
+  /* Copy 12-bit to signed for arithmetic */
+  for (int i = 0; i < N; i++)
+    input[i] = (gint) img12[i];
 
-      for (int c = 0; c < W; c++)
-        row_sum += img12[r * W + c];
-      row_mean = (gint) (row_sum / W);
+  /* Gaussian lowpass — captures banding + thermal drift */
+  gaussian_blur_separable (input, blurred, W, H);
 
-      for (int c = 0; c < W; c++)
-        corrected[r * W + c] = (gint) img12[r * W + c] - row_mean;
-    }
+  /* Highpass: subtract lowpass to isolate ridge detail */
+  for (int i = 0; i < N; i++)
+    corrected[i] = input[i] - (gint) (blurred[i] + 0.5);
 
-  /* Pass 2: Remove vertical striping by subtracting each column's mean */
-  for (int c = 0; c < W; c++)
-    {
-      gint64 col_sum = 0;
-      gint col_mean;
-
-      for (int r = 0; r < H; r++)
-        col_sum += corrected[r * W + c];
-      col_mean = (gint) (col_sum / H);
-
-      for (int r = 0; r < H; r++)
-        corrected[r * W + c] -= col_mean;
-    }
+  g_free (input);
+  g_free (blurred);
 
   /* Find range and normalize to [0, 255] */
   corr_min = G_MAXINT;
@@ -521,7 +569,7 @@ goodix_device_image_to_8bit (const guint16 *img12,
   gint range = corr_max - corr_min;
   if (range < 1) range = 1;
 
-  fp_dbg ("Image row+col norm: min=%d max=%d range=%d", corr_min, corr_max, range);
+  fp_dbg ("Image Gaussian highpass: min=%d max=%d range=%d", corr_min, corr_max, range);
 
   for (int i = 0; i < N; i++)
     img8[i] = (guint8) (((corrected[i] - corr_min) * 255) / range);
