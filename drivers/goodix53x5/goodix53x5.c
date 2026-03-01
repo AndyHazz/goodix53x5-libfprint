@@ -1495,7 +1495,10 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
                   }
                 g_variant_unref (tmpl_data);
 
-                if (tmpl_best_score > best_score)
+                /* Only consider this gallery entry if it passes all gates */
+                if (tmpl_best_score >= GOODIX_SIGFM_BEST_MIN &&
+                    tmpl_match_count >= GOODIX_SIGFM_MIN_SAMPLES &&
+                    tmpl_best_score > best_score)
                   {
                     best_score = tmpl_best_score;
                     best_match_count = tmpl_match_count;
@@ -1506,12 +1509,12 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
             sigfm_free_info (probe_info);
 
             fp_dbg ("Identify best SIGFM score: %d, matching_samples: %d "
-                    "(threshold: %d, min_samples: %d)",
+                    "(threshold: %d, best_min: %d, min_samples: %d)",
                     best_score, best_match_count,
-                    GOODIX_SIGFM_THRESHOLD, GOODIX_SIGFM_MIN_SAMPLES);
+                    GOODIX_SIGFM_THRESHOLD, GOODIX_SIGFM_BEST_MIN,
+                    GOODIX_SIGFM_MIN_SAMPLES);
 
-            if (best_score >= GOODIX_SIGFM_THRESHOLD &&
-                best_match_count >= GOODIX_SIGFM_MIN_SAMPLES)
+            if (match != NULL)
               fpi_device_identify_report (dev, match, NULL, NULL);
             else
               fpi_device_identify_report (dev, NULL, NULL, NULL);
@@ -1575,11 +1578,12 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
             sigfm_free_info (probe_info);
 
             fp_dbg ("Verify best SIGFM score: %d, matching_samples: %d "
-                    "(threshold: %d, min_samples: %d)",
+                    "(threshold: %d, best_min: %d, min_samples: %d)",
                     best_score, match_count,
-                    GOODIX_SIGFM_THRESHOLD, GOODIX_SIGFM_MIN_SAMPLES);
+                    GOODIX_SIGFM_THRESHOLD, GOODIX_SIGFM_BEST_MIN,
+                    GOODIX_SIGFM_MIN_SAMPLES);
 
-            if (best_score >= GOODIX_SIGFM_THRESHOLD &&
+            if (best_score >= GOODIX_SIGFM_BEST_MIN &&
                 match_count >= GOODIX_SIGFM_MIN_SAMPLES)
               fpi_device_verify_report (dev, FPI_MATCH_SUCCESS, NULL, NULL);
             else
