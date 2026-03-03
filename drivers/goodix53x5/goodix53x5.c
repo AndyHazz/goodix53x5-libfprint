@@ -198,9 +198,9 @@ goodix_rx_cb (FpiUsbTransfer *transfer,
       if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED) &&
           self->suspended)
         {
-          /* Suspend cancelled this read — park the SSM and signal completion */
+          /* Suspend cancelled this read — park the SSM for resume to restart.
+           * Keep blocking_ssm set so goodix_resume() can jump it. */
           g_clear_error (&error);
-          self->blocking_ssm = NULL;
           fpi_device_suspend_complete (dev, NULL);
           return;
         }
@@ -1027,6 +1027,29 @@ goodix_finger_wait_ssm_handler (FpiSsm   *ssm,
       }
       break;
 
+    case GOODIX_FINGER_WAIT_WARMUP_CAPTURE:
+      if (self->warmup_remaining > 0)
+        {
+          fp_dbg ("Warmup: capturing (%d remaining)", self->warmup_remaining);
+          FpiSsm *sub = fpi_ssm_new (dev, goodix_capture_ssm_handler,
+                                       GOODIX_CAPTURE_NUM_STATES);
+          fpi_ssm_start_subsm (ssm, sub);
+        }
+      else
+        {
+          fpi_ssm_jump_to_state (ssm, GOODIX_FINGER_WAIT_FDT_DOWN_SETUP);
+        }
+      break;
+
+    case GOODIX_FINGER_WAIT_WARMUP_CHECK:
+      /* Discard the warmup image and loop */
+      g_clear_pointer (&self->captured_image, g_free);
+      self->warmup_remaining--;
+      fp_dbg ("Warmup: discarding capture (%d remaining)",
+              self->warmup_remaining);
+      fpi_ssm_jump_to_state (ssm, GOODIX_FINGER_WAIT_WARMUP_CAPTURE);
+      break;
+
     case GOODIX_FINGER_WAIT_FDT_DOWN_SETUP:
       {
         /* Set up finger-down detection (re-arms the sensor) */
@@ -1043,7 +1066,7 @@ goodix_finger_wait_ssm_handler (FpiSsm   *ssm,
     case GOODIX_FINGER_WAIT_RECV_EVENT:
       /* Wait for FDT DOWN event with cancellable */
       self->blocking_ssm = ssm;
-      self->blocking_resume_state = GOODIX_FINGER_WAIT_FDT_DOWN_SETUP;
+      self->blocking_resume_state = GOODIX_FINGER_WAIT_WARMUP_CAPTURE;
       goodix_recv_start_cancellable (ssm, dev, self->cancel);
       break;
 
@@ -1431,6 +1454,30 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
     case GOODIX_VERIFY_MATCH:
       {
         FpiDeviceAction action = fpi_device_get_current_action (dev);
+        SigfmImgInfo *probe_info;
+        int keypoints;
+
+        /* Extract SIFT features once for both identify and verify paths */
+        probe_info = sigfm_extract (self->captured_image,
+                                     GOODIX_SENSOR_WIDTH,
+                                     GOODIX_SENSOR_HEIGHT);
+        keypoints = sigfm_keypoints_count (probe_info);
+        fp_dbg ("SIGFM probe keypoints: %d", keypoints);
+
+        /* Layer 2 quality gate: if too few keypoints, recapture while
+         * the finger is still on the sensor (no lift needed) */
+        if (keypoints < GOODIX_WARMUP_KEYPOINT_MIN &&
+            self->warmup_retries < GOODIX_WARMUP_MAX_RETRIES)
+          {
+            self->warmup_retries++;
+            fp_dbg ("Warmup: keypoints %d < %d, recapture %d/%d",
+                    keypoints, GOODIX_WARMUP_KEYPOINT_MIN,
+                    self->warmup_retries, GOODIX_WARMUP_MAX_RETRIES);
+            sigfm_free_info (probe_info);
+            g_clear_pointer (&self->captured_image, g_free);
+            fpi_ssm_jump_to_state (ssm, GOODIX_VERIFY_CAPTURE);
+            return;
+          }
 
         if (action == FPI_DEVICE_ACTION_IDENTIFY)
           {
@@ -1439,16 +1486,8 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
             FpPrint *match = NULL;
             int best_score = 0;
             int best_match_count = 0;
-            SigfmImgInfo *probe_info;
 
             fpi_device_get_identify_data (dev, &gallery);
-
-            /* Extract SIFT features from live capture */
-            probe_info = sigfm_extract (self->captured_image,
-                                         GOODIX_SENSOR_WIDTH,
-                                         GOODIX_SENSOR_HEIGHT);
-            fp_dbg ("SIGFM probe keypoints: %d",
-                    sigfm_keypoints_count (probe_info));
 
             for (guint i = 0; i < gallery->len; i++)
               {
@@ -1506,8 +1545,6 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
                   }
               }
 
-            sigfm_free_info (probe_info);
-
             fp_dbg ("Identify best SIGFM score: %d, matching_samples: %d "
                     "(threshold: %d, best_min: %d, min_samples: %d)",
                     best_score, best_match_count,
@@ -1526,18 +1563,10 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
             GVariant *data = NULL;
             int best_score = 0;
             int match_count = 0;
-            SigfmImgInfo *probe_info;
             int sample_idx = 0;
 
             fpi_device_get_verify_data (dev, &print);
             g_object_get (G_OBJECT (print), "fpi-data", &data, NULL);
-
-            /* Extract SIFT features from live capture */
-            probe_info = sigfm_extract (self->captured_image,
-                                         GOODIX_SENSOR_WIDTH,
-                                         GOODIX_SENSOR_HEIGHT);
-            fp_dbg ("SIGFM probe keypoints: %d",
-                    sigfm_keypoints_count (probe_info));
 
             if (data != NULL)
               {
@@ -1575,8 +1604,6 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
                 g_variant_unref (data);
               }
 
-            sigfm_free_info (probe_info);
-
             fp_dbg ("Verify best SIGFM score: %d, matching_samples: %d "
                     "(threshold: %d, best_min: %d, min_samples: %d)",
                     best_score, match_count,
@@ -1590,6 +1617,7 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
               fpi_device_verify_report (dev, FPI_MATCH_FAIL, NULL, NULL);
           }
 
+        sigfm_free_info (probe_info);
         g_clear_pointer (&self->captured_image, g_free);
         fpi_ssm_next_state (ssm);
       }
@@ -1712,6 +1740,7 @@ goodix_verify (FpDevice *dev)
 
   g_clear_object (&self->cancel);
   self->cancel = g_cancellable_new ();
+  self->warmup_retries = 0;
 
   ssm = fpi_ssm_new (dev, goodix_verify_ssm_handler,
                       GOODIX_VERIFY_NUM_STATES);
@@ -1740,6 +1769,7 @@ goodix_identify (FpDevice *dev)
 
   g_clear_object (&self->cancel);
   self->cancel = g_cancellable_new ();
+  self->warmup_retries = 0;
 
   ssm = fpi_ssm_new (dev, goodix_verify_ssm_handler,
                       GOODIX_VERIFY_NUM_STATES);
@@ -1790,10 +1820,11 @@ goodix_resume (FpDevice *dev)
     }
 
   self->suspended = FALSE;
+  self->warmup_remaining = GOODIX_WARMUP_CAPTURES;
   g_clear_object (&self->cancel);
   self->cancel = g_cancellable_new ();
 
-  /* Restart the SSM from the re-arm state (resubmits USB reads) */
+  /* Restart the SSM from the warmup/re-arm state (resubmits USB reads) */
   if (self->blocking_ssm)
     {
       fpi_ssm_jump_to_state (self->blocking_ssm, self->blocking_resume_state);

@@ -55,6 +55,11 @@ G_DECLARE_FINAL_TYPE (FpiDeviceGoodix53x5, fpi_device_goodix53x5, FPI,
 #define GOODIX_SIGFM_BEST_MIN     40   /* minimum best score from any single sample */
 #define GOODIX_SIGFM_MIN_SAMPLES  2    /* minimum enrolled samples above threshold */
 
+/* Sensor warmup parameters */
+#define GOODIX_WARMUP_CAPTURES      2    /* pre-touch captures after resume */
+#define GOODIX_WARMUP_KEYPOINT_MIN  55   /* minimum SIFT keypoints for quality gate */
+#define GOODIX_WARMUP_MAX_RETRIES   3    /* max post-touch recaptures for quality */
+
 /* Timeouts in ms */
 #define GOODIX_CMD_TIMEOUT    1000
 #define GOODIX_ACK_TIMEOUT    2000
@@ -181,6 +186,8 @@ typedef enum {
 /* Finger-wait SSM (awaiting finger down) */
 typedef enum {
   GOODIX_FINGER_WAIT_EC_POWER_ON = 0,
+  GOODIX_FINGER_WAIT_WARMUP_CAPTURE,
+  GOODIX_FINGER_WAIT_WARMUP_CHECK,
   GOODIX_FINGER_WAIT_FDT_DOWN_SETUP,
   GOODIX_FINGER_WAIT_RECV_EVENT,
   GOODIX_FINGER_WAIT_GEN_UP_BASE,
@@ -295,6 +302,10 @@ struct _FpiDeviceGoodix53x5
 
   /* Skip post-enrollment duplicate detection (cleared after first identify) */
   gboolean   skip_next_identify;
+
+  /* Sensor warmup state */
+  int        warmup_remaining;   /* pre-touch captures left (set on resume) */
+  int        warmup_retries;     /* post-touch recaptures done (quality gate) */
 };
 
 /* --- Protocol functions (goodix53x5-proto.c) --- */
