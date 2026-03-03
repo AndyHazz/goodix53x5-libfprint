@@ -1471,21 +1471,6 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
         keypoints = sigfm_keypoints_count (probe_info);
         fp_dbg ("SIGFM probe keypoints: %d", keypoints);
 
-        /* Layer 2 quality gate: if too few keypoints, recapture while
-         * the finger is still on the sensor (no lift needed) */
-        if (keypoints < GOODIX_WARMUP_KEYPOINT_MIN &&
-            self->warmup_retries < GOODIX_WARMUP_MAX_RETRIES)
-          {
-            self->warmup_retries++;
-            fp_dbg ("Warmup: keypoints %d < %d, recapture %d/%d",
-                    keypoints, GOODIX_WARMUP_KEYPOINT_MIN,
-                    self->warmup_retries, GOODIX_WARMUP_MAX_RETRIES);
-            sigfm_free_info (probe_info);
-            g_clear_pointer (&self->captured_image, g_free);
-            fpi_ssm_jump_to_state (ssm, GOODIX_VERIFY_CAPTURE);
-            return;
-          }
-
         if (action == FPI_DEVICE_ACTION_IDENTIFY)
           {
             /* Identify: match against gallery of enrolled prints */
@@ -1747,7 +1732,7 @@ goodix_verify (FpDevice *dev)
 
   g_clear_object (&self->cancel);
   self->cancel = g_cancellable_new ();
-  self->warmup_retries = 0;
+
 
   ssm = fpi_ssm_new (dev, goodix_verify_ssm_handler,
                       GOODIX_VERIFY_NUM_STATES);
@@ -1776,7 +1761,7 @@ goodix_identify (FpDevice *dev)
 
   g_clear_object (&self->cancel);
   self->cancel = g_cancellable_new ();
-  self->warmup_retries = 0;
+
 
   ssm = fpi_ssm_new (dev, goodix_verify_ssm_handler,
                       GOODIX_VERIFY_NUM_STATES);
