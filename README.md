@@ -1,17 +1,17 @@
-# Goodix HTK32 (27c6:5385) libfprint Driver
+# Goodix HTK32 (27c6:5385 / 27c6:5395) libfprint Driver
 
-A libfprint driver for the Goodix HTK32 fingerprint sensor found in the **Dell XPS 13 7390** and possibly other laptops using the `27c6:5385` USB device.
+A libfprint driver for the Goodix HTK32 fingerprint sensor found in the **Dell XPS 13 7390**, the **Dell XPS 15 9570** and possibly other laptops using the `27c6:5385` or `27c6:5395` USB device.
 
 ## Hardware
 
 - **Vendor ID:** `0x27c6`
-- **Product ID:** `0x5385`
+- **Product IDs:** `0x5385`, `0x5395`
 - **Sensor:** 108 x 88 pixels, capacitive press-type
-- **Known devices:** Dell XPS 13 7390 2-in-1
+- **Known devices:** Dell XPS 13 7390 2-in-1, Dell XPS 15 9570
 
 Check if you have this sensor:
 ```
-lsusb | grep 27c6:5385
+lsusb | grep -E '27c6:(5385|5395)'
 ```
 
 ## How It Works
