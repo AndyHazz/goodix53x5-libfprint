@@ -998,6 +998,13 @@ goodix_open_ssm_done (FpiSsm *ssm, FpDevice *dev, GError *error)
       return;
     }
 
+  /* Warm up sensor on first verify/identify after open — the open-time
+   * calibration captures use dac_l which doesn't exercise the dac_h analog
+   * path used for finger matching.  Especially needed after fprintd restart
+   * following suspend (sleep hook kills fprintd, so goodix_resume() warmup
+   * never runs). */
+  self->warmup_remaining = GOODIX_WARMUP_CAPTURES;
+
   fp_info ("Device initialization complete");
   fpi_device_open_complete (dev, NULL);
 }
