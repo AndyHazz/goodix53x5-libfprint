@@ -302,7 +302,8 @@ struct _FpiDeviceGoodix53x5
   gboolean   skip_next_identify;
 
   /* Sensor warmup state */
-  int        warmup_remaining;   /* pre-touch captures left (set on resume) */
+  int        warmup_remaining;   /* pre-touch captures left */
+  gboolean   warmup_done;        /* TRUE after first warmup cycle (per fprintd session) */
 };
 
 /* --- Protocol functions (goodix53x5-proto.c) --- */
