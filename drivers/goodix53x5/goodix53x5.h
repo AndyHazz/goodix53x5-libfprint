@@ -153,7 +153,8 @@ typedef enum {
 
 /* Open SSM — full device initialization */
 typedef enum {
-  GOODIX_OPEN_CLAIM_INTERFACE = 0,
+  GOODIX_OPEN_USB_RESET = 0,
+  GOODIX_OPEN_CLAIM_INTERFACE,
   GOODIX_OPEN_EMPTY_BUFFER,
   GOODIX_OPEN_PING,
   GOODIX_OPEN_READ_FW_VERSION,
@@ -282,6 +283,9 @@ struct _FpiDeviceGoodix53x5
 
   /* Current command (for sub-SSM) */
   GoodixCmd *cmd;
+
+  /* USB interface state */
+  gboolean usb_interface_claimed;
 
   /* Task SSM tracking */
   FpiSsm *task_ssm;

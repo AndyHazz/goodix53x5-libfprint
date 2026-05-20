@@ -418,6 +418,20 @@ goodix_open_ssm_handler (FpiSsm   *ssm,
 
   switch (fpi_ssm_get_cur_state (ssm))
     {
+    case GOODIX_OPEN_USB_RESET:
+      {
+        GError *error = NULL;
+
+        if (!g_usb_device_reset (fpi_device_get_usb_device (dev), &error))
+          {
+            fpi_ssm_mark_failed (ssm, error);
+            return;
+          }
+
+        fpi_ssm_next_state (ssm);
+      }
+      break;
+
     case GOODIX_OPEN_CLAIM_INTERFACE:
       {
         GError *error = NULL;
@@ -429,6 +443,8 @@ goodix_open_ssm_handler (FpiSsm   *ssm,
             fpi_ssm_mark_failed (ssm, error);
             return;
           }
+
+        self->usb_interface_claimed = TRUE;
         fpi_ssm_next_state (ssm);
       }
       break;
@@ -980,6 +996,29 @@ goodix_open_ssm_handler (FpiSsm   *ssm,
 }
 
 static void
+goodix_cleanup_failed_open (FpDevice *dev)
+{
+  FpiDeviceGoodix53x5 *self = FPI_DEVICE_GOODIX53X5 (dev);
+  GUsbDevice *usb_dev = fpi_device_get_usb_device (dev);
+  g_autoptr(GError) cleanup_error = NULL;
+
+  if (self->usb_interface_claimed)
+    {
+      if (!g_usb_device_release_interface (usb_dev, GOODIX_USB_INTERFACE, 0,
+                                           &cleanup_error))
+        fp_warn ("Failed to release USB interface after open failure: %s",
+                 cleanup_error->message);
+
+      self->usb_interface_claimed = FALSE;
+      g_clear_error (&cleanup_error);
+    }
+
+  if (!g_usb_device_close (usb_dev, &cleanup_error))
+    fp_warn ("Failed to close USB device after open failure: %s",
+             cleanup_error->message);
+}
+
+static void
 goodix_open_ssm_done (FpiSsm *ssm, FpDevice *dev, GError *error)
 {
   FpiDeviceGoodix53x5 *self = FPI_DEVICE_GOODIX53X5 (dev);
@@ -994,6 +1033,7 @@ goodix_open_ssm_done (FpiSsm *ssm, FpDevice *dev, GError *error)
   if (error)
     {
       fp_warn ("Device open failed: %s", error->message);
+      goodix_cleanup_failed_open (dev);
       fpi_device_open_complete (dev, error);
       return;
     }
@@ -1702,6 +1742,7 @@ goodix_close (FpDevice *dev)
 
   g_usb_device_release_interface (fpi_device_get_usb_device (dev),
                                   GOODIX_USB_INTERFACE, 0, &error);
+  self->usb_interface_claimed = FALSE;
 
   fpi_device_close_complete (dev, error);
 }
