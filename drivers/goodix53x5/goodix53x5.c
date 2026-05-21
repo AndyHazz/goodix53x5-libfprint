@@ -1070,6 +1070,9 @@ goodix_finger_wait_ssm_handler (FpiSsm   *ssm,
       {
         /* Power on sensor (idempotent if already on) */
         guint8 payload[3] = { 0x01, 0x01, 0x00 };
+        fpi_device_report_finger_status_changes (dev,
+                                                 FP_FINGER_STATUS_NEEDED,
+                                                 FP_FINGER_STATUS_PRESENT);
         goodix_run_cmd (ssm, dev, 0xA, 0x7, payload, 3, TRUE);
       }
       break;
@@ -1197,6 +1200,9 @@ goodix_finger_wait_ssm_handler (FpiSsm   *ssm,
 
         /* Real finger detected! */
         fp_dbg ("Finger detected");
+        fpi_device_report_finger_status_changes (dev,
+                                                 FP_FINGER_STATUS_PRESENT,
+                                                 FP_FINGER_STATUS_NEEDED);
         fpi_ssm_mark_completed (ssm);
       }
       break;
@@ -1336,6 +1342,9 @@ goodix_finger_up_ssm_handler (FpiSsm   *ssm,
 
         goodix_device_generate_fdt_base (pl + 4, GOODIX_FDT_BASE_LEN,
                                          self->calib.fdt_base_down);
+        fpi_device_report_finger_status_changes (dev,
+                                                 FP_FINGER_STATUS_NONE,
+                                                 FP_FINGER_STATUS_PRESENT | FP_FINGER_STATUS_NEEDED);
         fpi_ssm_next_state (ssm);
       }
       break;
