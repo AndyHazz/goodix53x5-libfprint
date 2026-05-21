@@ -55,6 +55,9 @@ G_DECLARE_FINAL_TYPE (FpiDeviceGoodix53x5, fpi_device_goodix53x5, FPI,
 #define GOODIX_SIGFM_BEST_MIN     40   /* minimum best score from any single sample */
 #define GOODIX_SIGFM_MIN_SAMPLES  2    /* minimum enrolled samples above threshold */
 
+/* Captures below this feature count are effectively blank/failed touches. */
+#define GOODIX_MIN_CAPTURE_KEYPOINTS 20
+
 /* Sensor warmup parameters */
 #define GOODIX_WARMUP_CAPTURES      5    /* pre-touch captures after resume */
 

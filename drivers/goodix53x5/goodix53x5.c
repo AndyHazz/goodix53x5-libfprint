@@ -1387,6 +1387,24 @@ goodix_enroll_ssm_handler (FpiSsm   *ssm,
 
     case GOODIX_ENROLL_PROCESS:
       {
+        SigfmImgInfo *info;
+        int keypoints;
+
+        info = sigfm_extract (self->captured_image,
+                              GOODIX_SENSOR_WIDTH,
+                              GOODIX_SENSOR_HEIGHT);
+        keypoints = sigfm_keypoints_count (info);
+        sigfm_free_info (info);
+
+        if (keypoints < GOODIX_MIN_CAPTURE_KEYPOINTS)
+          {
+            g_clear_pointer (&self->captured_image, g_free);
+            fpi_device_enroll_progress (dev, self->enroll_stage, NULL,
+                                        fpi_device_retry_new (FP_DEVICE_RETRY_REMOVE_FINGER));
+            fpi_ssm_next_state (ssm);
+            return;
+          }
+
         /* Store captured image in enrollment array */
         g_ptr_array_add (self->enroll_images, self->captured_image);
         self->captured_image = NULL;
@@ -1510,7 +1528,21 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
                                      GOODIX_SENSOR_WIDTH,
                                      GOODIX_SENSOR_HEIGHT);
         keypoints = sigfm_keypoints_count (probe_info);
-        fp_dbg ("SIGFM probe keypoints: %d", keypoints);
+
+        if (keypoints < GOODIX_MIN_CAPTURE_KEYPOINTS)
+          {
+            if (action == FPI_DEVICE_ACTION_IDENTIFY)
+              fpi_device_identify_report (dev, NULL, NULL,
+                                          fpi_device_retry_new (FP_DEVICE_RETRY_REMOVE_FINGER));
+            else
+              fpi_device_verify_report (dev, FPI_MATCH_ERROR, NULL,
+                                        fpi_device_retry_new (FP_DEVICE_RETRY_REMOVE_FINGER));
+
+            sigfm_free_info (probe_info);
+            g_clear_pointer (&self->captured_image, g_free);
+            fpi_ssm_next_state (ssm);
+            return;
+          }
 
         if (action == FPI_DEVICE_ACTION_IDENTIFY)
           {
