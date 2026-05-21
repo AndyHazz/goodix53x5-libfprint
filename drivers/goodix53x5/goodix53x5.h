@@ -53,7 +53,7 @@ G_DECLARE_FINAL_TYPE (FpiDeviceGoodix53x5, fpi_device_goodix53x5, FPI,
 /* SIGFM (SIFT-based) matching parameters */
 #define GOODIX_SIGFM_THRESHOLD    10   /* minimum sigfm score to count as matching */
 #define GOODIX_SIGFM_BEST_MIN     40   /* minimum best score from any single sample */
-#define GOODIX_SIGFM_MIN_SAMPLES  2    /* minimum enrolled samples above threshold */
+#define GOODIX_SIGFM_MIN_SAMPLES  1    /* minimum enrolled samples above threshold */
 
 /* Sensor warmup parameters */
 #define GOODIX_WARMUP_CAPTURES      5    /* pre-touch captures after resume */

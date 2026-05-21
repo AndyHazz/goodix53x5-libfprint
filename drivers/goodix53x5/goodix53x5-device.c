@@ -457,35 +457,34 @@ goodix_device_decode_image (const guint8 *data,
   return image;
 }
 
-#define GAUSS_SIGMA  5.0
-#define GAUSS_RADIUS 15          /* 3 * sigma */
-#define GAUSS_KSIZE  (2 * GAUSS_RADIUS + 1)  /* 31 */
-
 /**
  * gaussian_blur_separable:
  *
  * In-place 2D Gaussian blur via two separable 1D passes.
- * Input: src (gint array, W*H). Output: dst (double array, W*H).
+ * Input: src (double array, W*H). Output: dst (double array, W*H).
  * Uses clamped border handling.
  */
 static void
-gaussian_blur_separable (const gint *src,
+gaussian_blur_separable (const double *src,
                          double     *dst,
                          int         W,
-                         int         H)
+                         int         H,
+                         double      sigma)
 {
-  double kernel[GAUSS_KSIZE];
+  int radius = MAX (1, (int) ceil (3.0 * sigma));
+  int ksize = 2 * radius + 1;
+  double *kernel = g_malloc (ksize * sizeof (double));
   double ksum = 0;
   double *temp = g_malloc (W * H * sizeof (double));
 
   /* Build normalized 1D Gaussian kernel */
-  for (int i = 0; i < GAUSS_KSIZE; i++)
+  for (int i = 0; i < ksize; i++)
     {
-      double x = i - GAUSS_RADIUS;
-      kernel[i] = exp (-0.5 * x * x / (GAUSS_SIGMA * GAUSS_SIGMA));
+      double x = i - radius;
+      kernel[i] = exp (-0.5 * x * x / (sigma * sigma));
       ksum += kernel[i];
     }
-  for (int i = 0; i < GAUSS_KSIZE; i++)
+  for (int i = 0; i < ksize; i++)
     kernel[i] /= ksum;
 
   /* Horizontal pass */
@@ -493,10 +492,10 @@ gaussian_blur_separable (const gint *src,
     for (int c = 0; c < W; c++)
       {
         double sum = 0;
-        for (int k = -GAUSS_RADIUS; k <= GAUSS_RADIUS; k++)
+        for (int k = -radius; k <= radius; k++)
           {
             int cc = CLAMP (c + k, 0, W - 1);
-            sum += src[r * W + cc] * kernel[k + GAUSS_RADIUS];
+            sum += src[r * W + cc] * kernel[k + radius];
           }
         temp[r * W + c] = sum;
       }
@@ -506,27 +505,27 @@ gaussian_blur_separable (const gint *src,
     for (int c = 0; c < W; c++)
       {
         double sum = 0;
-        for (int k = -GAUSS_RADIUS; k <= GAUSS_RADIUS; k++)
+        for (int k = -radius; k <= radius; k++)
           {
             int rr = CLAMP (r + k, 0, H - 1);
-            sum += temp[rr * W + c] * kernel[k + GAUSS_RADIUS];
+            sum += temp[rr * W + c] * kernel[k + radius];
           }
         dst[r * W + c] = sum;
       }
 
+  g_free (kernel);
   g_free (temp);
 }
 
 /**
  * goodix_device_image_to_8bit:
  *
- * Convert 12-bit sensor image to 8-bit grayscale with Gaussian highpass.
+ * Convert 12-bit sensor image to 8-bit grayscale with row/column bandpass.
  *
- * Subtracts a Gaussian-blurred lowpass (sigma=5, kernel=31) from the original
- * to remove all low-frequency content: horizontal banding, vertical striping,
- * and 2D thermal drift patterns that appear after S4 hibernate.  This preserves
- * fingerprint ridge detail (~7px inter-ridge distance) while eliminating offset
- * patterns of any spatial structure.
+ * First removes row/column mean structure from the raw sensor frame, then
+ * subtracts a wide Gaussian lowpass (sigma=7.0) and applies light smoothing
+ * (sigma=0.7). This keeps fingerprint ridge-scale detail while suppressing
+ * fixed grid artefacts that otherwise produce stable false matches.
  *
  * Returns newly allocated array of GOODIX_SENSOR_PIXELS guint8 values.
  */
@@ -541,43 +540,61 @@ goodix_device_image_to_8bit (const guint16 *img12,
   (void) calib_img;
 
   guint8 *img8 = g_malloc (N);
-  gint *input = g_malloc (N * sizeof (gint));
-  double *blurred = g_malloc (N * sizeof (double));
-  gint *corrected = g_malloc (N * sizeof (gint));
-  gint corr_min, corr_max;
+  double *row_mean = g_new0 (double, H);
+  double *col_mean = g_new0 (double, W);
+  double *residual = g_malloc (N * sizeof (double));
+  double *lowpass = g_malloc (N * sizeof (double));
+  double *highpass = g_malloc (N * sizeof (double));
+  double *smoothed = g_malloc (N * sizeof (double));
+  double global_mean = 0.0;
+  double corr_min = G_MAXDOUBLE;
+  double corr_max = -G_MAXDOUBLE;
 
-  /* Copy 12-bit to signed for arithmetic */
+  for (int r = 0; r < H; r++)
+    for (int c = 0; c < W; c++)
+      {
+        double value = img12[r * W + c];
+
+        row_mean[r] += value;
+        col_mean[c] += value;
+        global_mean += value;
+      }
+
+  global_mean /= N;
+  for (int r = 0; r < H; r++)
+    row_mean[r] /= W;
+  for (int c = 0; c < W; c++)
+    col_mean[c] /= H;
+
+  for (int r = 0; r < H; r++)
+    for (int c = 0; c < W; c++)
+      residual[r * W + c] = img12[r * W + c] - row_mean[r] - col_mean[c] + global_mean;
+
+  gaussian_blur_separable (residual, lowpass, W, H, 7.0);
   for (int i = 0; i < N; i++)
-    input[i] = (gint) img12[i];
+    highpass[i] = residual[i] - lowpass[i];
 
-  /* Gaussian lowpass — captures banding + thermal drift */
-  gaussian_blur_separable (input, blurred, W, H);
-
-  /* Highpass: subtract lowpass to isolate ridge detail */
-  for (int i = 0; i < N; i++)
-    corrected[i] = input[i] - (gint) (blurred[i] + 0.5);
-
-  g_free (input);
-  g_free (blurred);
+  gaussian_blur_separable (highpass, smoothed, W, H, 0.7);
 
   /* Find range and normalize to [0, 255] */
-  corr_min = G_MAXINT;
-  corr_max = G_MININT;
   for (int i = 0; i < N; i++)
     {
-      if (corrected[i] < corr_min) corr_min = corrected[i];
-      if (corrected[i] > corr_max) corr_max = corrected[i];
+      if (smoothed[i] < corr_min) corr_min = smoothed[i];
+      if (smoothed[i] > corr_max) corr_max = smoothed[i];
     }
 
-  gint range = corr_max - corr_min;
-  if (range < 1) range = 1;
-
-  fp_dbg ("Image Gaussian highpass: min=%d max=%d range=%d", corr_min, corr_max, range);
+  double range = corr_max - corr_min;
+  if (range < 1.0)
+    range = 1.0;
 
   for (int i = 0; i < N; i++)
-    img8[i] = (guint8) (((corrected[i] - corr_min) * 255) / range);
+    img8[i] = (guint8) (((smoothed[i] - corr_min) * 255.0) / range);
 
-  g_free (corrected);
+  g_free (row_mean);
+  g_free (col_mean);
+  g_free (residual);
+  g_free (lowpass);
+  g_free (highpass);
+  g_free (smoothed);
   return img8;
 }
-
