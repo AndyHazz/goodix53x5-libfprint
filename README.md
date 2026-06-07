@@ -233,6 +233,14 @@ fprintd-enroll
 - **8 enrollment samples** are stored as processed 108x88 8-bit images. During verification, SIFT features are extracted from each stored sample and compared with the live capture.
 - **Image preprocessing** uses a row/column bandpass: it removes row/column mean structure, subtracts a wide Gaussian lowpass, applies light smoothing, then normalizes to 8-bit.
 
+## Matching accuracy and security
+
+This is a small (108x88 px) press sensor with SIFT-based matching, so treat it as **convenience-grade** authentication rather than a high-security factor.
+
+An earlier version of this driver could accept non-enrolled fingers ([issue #3](https://github.com/AndyHazz/goodix53x5-libfprint/issues/3)). That was traced to the image preprocessing, not the matcher: the current row/column bandpass front-end produces much cleaner ridge detail, which separates genuine and impostor captures well. In on-device testing after this change, enrolled fingers scored well above the accept gate while non-enrolled fingers scored at or near zero.
+
+The accept gate is `GOODIX_SIGFM_BEST_MIN` in `goodix53x5.h` (default `14`). Raising it makes acceptance stricter - fewer false accepts at the cost of more re-presses of a genuine finger; lowering it does the reverse. The default suits typical day-to-day login on this sensor; tune it to taste.
+
 ## File Structure
 
 ```
