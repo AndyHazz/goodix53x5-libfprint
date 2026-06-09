@@ -1115,9 +1115,101 @@ goodix_open_ssm_done (FpiSsm *ssm, FpDevice *dev, GError *error)
 }
 
 /* Forward declarations for SSM handlers used as sub-SSMs */
+static void goodix_ref_capture_ssm_handler (FpiSsm *ssm, FpDevice *dev);
 static void goodix_finger_wait_ssm_handler (FpiSsm *ssm, FpDevice *dev);
 static void goodix_capture_ssm_handler (FpiSsm *ssm, FpDevice *dev);
 static void goodix_finger_up_ssm_handler (FpiSsm *ssm, FpDevice *dev);
+
+/* ========================================================================
+ * TX-off no-finger reference capture SSM
+ * ======================================================================== */
+
+static void
+goodix_ref_capture_ssm_handler (FpiSsm   *ssm,
+                                FpDevice *dev)
+{
+  FpiDeviceGoodix53x5 *self = FPI_DEVICE_GOODIX53X5 (dev);
+
+  switch (fpi_ssm_get_cur_state (ssm))
+    {
+    case GOODIX_REF_CAPTURE_EC_POWER_ON:
+      {
+        guint8 payload[3] = { 0x01, 0x01, 0x00 };
+        goodix_run_cmd (ssm, dev, 0xA, 0x7, payload, sizeof (payload), TRUE);
+      }
+      break;
+
+    case GOODIX_REF_CAPTURE_EC_POWER_ON_DONE:
+      {
+        const guint8 *pl;
+        gsize pl_len;
+
+        if (!goodix_parse_reply_exact (dev, 0xA, 0x7, &pl, &pl_len, NULL) ||
+            pl_len == 0 || pl[0] != 1)
+          {
+            fpi_ssm_mark_failed (ssm,
+                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                           "Reference EC power-on failed"));
+            return;
+          }
+
+        fpi_ssm_next_state (ssm);
+      }
+      break;
+
+    case GOODIX_REF_CAPTURE_GET_IMAGE:
+      {
+        guint8 img_req[4];
+
+        goodix_build_image_request (FALSE, TRUE, FALSE, self->calib.dac_l,
+                                    img_req);
+        goodix_run_cmd (ssm, dev, 0x2, 0x0, img_req, sizeof (img_req), TRUE);
+      }
+      break;
+
+    case GOODIX_REF_CAPTURE_DECODE:
+      {
+        guint8 cat, cmd;
+        const guint8 *pl;
+        gsize pl_len, dec_len;
+        g_autofree guint8 *decrypted = NULL;
+        g_autofree guint16 *img12 = NULL;
+
+        if (!goodix_proto_rx_parse (&self->rx, &cat, &cmd, &pl, &pl_len))
+          {
+            fpi_ssm_mark_failed (ssm,
+                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                           "Failed to parse reference response"));
+            return;
+          }
+
+        decrypted = goodix_crypto_gtls_decrypt_sensor_data (&self->gtls,
+                                                            pl, pl_len,
+                                                            &dec_len);
+        if (decrypted == NULL)
+          {
+            fpi_ssm_mark_failed (ssm,
+                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                           "Reference image decryption failed"));
+            return;
+          }
+
+        img12 = goodix_device_decode_image (decrypted, dec_len);
+        if (img12 == NULL)
+          {
+            fpi_ssm_mark_failed (ssm,
+                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                           "Reference image decode failed"));
+            return;
+          }
+
+        g_clear_pointer (&self->reference_image, g_free);
+        self->reference_image = g_steal_pointer (&img12);
+        fpi_ssm_mark_completed (ssm);
+      }
+      break;
+    }
+}
 
 /* ========================================================================
  * Finger-wait SSM (waiting for finger down)
@@ -1330,14 +1422,34 @@ goodix_capture_ssm_handler (FpiSsm   *ssm,
         /* Decode 12-bit and convert to 8-bit */
         {
           guint16 *img12 = goodix_device_decode_image (decrypted, dec_len);
+          guint8 *img8;
 
-          /* No background subtraction: calibration image uses dac_l/is_finger=FALSE
-           * while finger captures use dac_h/is_finger=TRUE. Subtraction with
-           * mismatched DAC settings destroys fingerprint contrast. */
-          guint8 *img8 = goodix_device_image_to_8bit (img12, NULL);
+          if (img12 == NULL)
+            {
+              g_free (decrypted);
+              fpi_ssm_mark_failed (ssm,
+                                   fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                             "Capture image decode failed"));
+              return;
+            }
+
+          if (self->reference_image == NULL)
+            {
+              g_free (img12);
+              g_free (decrypted);
+              fpi_ssm_mark_failed (ssm,
+                                   fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                             "Missing reference image"));
+              return;
+            }
+
+          img8 = goodix_device_image_to_8bit (img12, self->reference_image);
+          self->captured_clipped_fraction =
+            goodix_device_image_clipped_fraction (img12);
 
           g_free (img12);
           g_free (decrypted);
+          g_clear_pointer (&self->reference_image, g_free);
 
           /* Store native 8-bit image for SIGFM matching */
           g_free (self->captured_image);
@@ -1520,6 +1632,14 @@ goodix_enroll_ssm_handler (FpiSsm   *ssm,
 
   switch (fpi_ssm_get_cur_state (ssm))
     {
+    case GOODIX_ENROLL_CAPTURE_REF:
+      {
+        FpiSsm *sub = fpi_ssm_new (dev, goodix_ref_capture_ssm_handler,
+                                   GOODIX_REF_CAPTURE_NUM_STATES);
+        fpi_ssm_start_subsm (ssm, sub);
+      }
+      break;
+
     case GOODIX_ENROLL_WAIT_FINGER:
       {
         FpiSsm *sub = fpi_ssm_new (dev, goodix_finger_wait_ssm_handler,
@@ -1540,6 +1660,23 @@ goodix_enroll_ssm_handler (FpiSsm   *ssm,
       {
         SigfmImgInfo *info;
         int keypoints;
+
+        /* Partial-contact captures make weak templates: the clipped
+         * (non-contact) area holds no ridge data, and historical fluke
+         * matches rode templates enrolled with poor coverage. Ask the user
+         * to re-place the finger instead of storing such a stage. */
+        if (self->captured_clipped_fraction > GOODIX_ENROLL_MAX_CLIPPED_FRACTION)
+          {
+            fp_dbg ("Enrollment stage rejected: %.1f%% of frame has no "
+                    "finger contact (limit %.1f%%)",
+                    self->captured_clipped_fraction * 100.0,
+                    GOODIX_ENROLL_MAX_CLIPPED_FRACTION * 100.0);
+            g_clear_pointer (&self->captured_image, g_free);
+            fpi_device_enroll_progress (dev, self->enroll_stage, NULL,
+                                        fpi_device_retry_new (FP_DEVICE_RETRY_CENTER_FINGER));
+            fpi_ssm_next_state (ssm);
+            return;
+          }
 
         info = sigfm_extract (self->captured_image,
                               GOODIX_SENSOR_WIDTH,
@@ -1579,7 +1716,7 @@ goodix_enroll_ssm_handler (FpiSsm   *ssm,
 
     case GOODIX_ENROLL_NEXT:
       if (self->enroll_stage < GOODIX_ENROLL_SAMPLES)
-        fpi_ssm_jump_to_state (ssm, GOODIX_ENROLL_WAIT_FINGER);
+        fpi_ssm_jump_to_state (ssm, GOODIX_ENROLL_CAPTURE_REF);
       else
         fpi_ssm_mark_completed (ssm);
       break;
@@ -1597,6 +1734,7 @@ goodix_enroll_ssm_done (FpiSsm *ssm, FpDevice *dev, GError *error)
   if (error)
     {
       g_clear_pointer (&self->enroll_images, g_ptr_array_unref);
+      g_clear_pointer (&self->reference_image, g_free);
       g_clear_pointer (&self->captured_image, g_free);
       fpi_device_enroll_complete (dev, NULL, error);
       return;
@@ -1608,7 +1746,10 @@ goodix_enroll_ssm_done (FpiSsm *ssm, FpDevice *dev, GError *error)
   fpi_device_get_enroll_data (dev, &print);
   fpi_print_set_type (print, FPI_PRINT_RAW);
 
-  /* Build GVariant "aay" — array of byte arrays, one per enrollment sample */
+  /* Build GVariant "aay" — array of byte arrays, one per enrollment sample.
+   * There is no driver-private format magic/version here; templates enrolled
+   * with the old TX-off p2 preprocessing must be re-enrolled for p3 scoring.
+   */
   GVariantBuilder builder;
 
   g_variant_builder_init (&builder, G_VARIANT_TYPE ("aay"));
@@ -1711,6 +1852,14 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
 
   switch (fpi_ssm_get_cur_state (ssm))
     {
+    case GOODIX_VERIFY_CAPTURE_REF:
+      {
+        FpiSsm *sub = fpi_ssm_new (dev, goodix_ref_capture_ssm_handler,
+                                   GOODIX_REF_CAPTURE_NUM_STATES);
+        fpi_ssm_start_subsm (ssm, sub);
+      }
+      break;
+
     case GOODIX_VERIFY_WAIT_FINGER:
       {
         FpiSsm *sub = fpi_ssm_new (dev, goodix_finger_wait_ssm_handler,
@@ -1927,6 +2076,7 @@ goodix_verify_ssm_done (FpiSsm *ssm, FpDevice *dev, GError *error)
 
   self->task_ssm = NULL;
   self->blocking_ssm = NULL;
+  g_clear_pointer (&self->reference_image, g_free);
   g_clear_pointer (&self->captured_image, g_free);
 
   if (error)
@@ -1994,6 +2144,7 @@ goodix_close (FpDevice *dev)
   g_clear_pointer (&self->otp_data, g_free);
   g_clear_pointer (&self->fw_version, g_free);
   g_clear_pointer (&self->rx.buf, g_free);
+  g_clear_pointer (&self->reference_image, g_free);
   g_clear_pointer (&self->captured_image, g_free);
   g_clear_pointer (&self->enroll_images, g_ptr_array_unref);
 
@@ -2023,6 +2174,8 @@ goodix_enroll (FpDevice *dev)
   self->cancel = g_cancellable_new ();
 
   self->enroll_stage = 0;
+  g_clear_pointer (&self->reference_image, g_free);
+  g_clear_pointer (&self->captured_image, g_free);
   g_clear_pointer (&self->enroll_images, g_ptr_array_unref);
   self->enroll_images = g_ptr_array_new_with_free_func (g_free);
 
@@ -2043,6 +2196,8 @@ goodix_verify (FpDevice *dev)
   goodix_clear_pending_result_report (self);
   self->action_result_reported = FALSE;
   self->verify_wait_finger_up = FALSE;
+  g_clear_pointer (&self->reference_image, g_free);
+  g_clear_pointer (&self->captured_image, g_free);
 
   ssm = fpi_ssm_new (dev, goodix_verify_ssm_handler,
                       GOODIX_VERIFY_NUM_STATES);
@@ -2061,6 +2216,8 @@ goodix_identify (FpDevice *dev)
   goodix_clear_pending_result_report (self);
   self->action_result_reported = FALSE;
   self->verify_wait_finger_up = FALSE;
+  g_clear_pointer (&self->reference_image, g_free);
+  g_clear_pointer (&self->captured_image, g_free);
 
   ssm = fpi_ssm_new (dev, goodix_verify_ssm_handler,
                       GOODIX_VERIFY_NUM_STATES);

@@ -40,6 +40,7 @@ G_DECLARE_FINAL_TYPE (FpiDeviceGoodix53x5, fpi_device_goodix53x5, FPI,
 #define GOODIX_SENSOR_WIDTH  108
 #define GOODIX_SENSOR_HEIGHT 88
 #define GOODIX_SENSOR_PIXELS (GOODIX_SENSOR_WIDTH * GOODIX_SENSOR_HEIGHT)
+#define GOODIX_SENSOR_RAW12_BYTES (((GOODIX_SENSOR_PIXELS + 3) / 4) * 6)
 
 /* FDT base length */
 #define GOODIX_FDT_BASE_LEN 24
@@ -47,11 +48,26 @@ G_DECLARE_FINAL_TYPE (FpiDeviceGoodix53x5, fpi_device_goodix53x5, FPI,
 /* Enroll stages */
 #define GOODIX_ENROLL_SAMPLES 8
 
-/* SIGFM (SIFT-based) matching parameters */
-#define GOODIX_SIGFM_BEST_MIN 14   /* minimum best score from any single sample */
+/* SIGFM (SIFT-based) matching parameters.
+ * This gate is tuned for TX-off p3 preprocessing plus mutual SIGFM matching;
+ * it is not comparable to old p2/p3 non-mutual score scales.
+ */
+#define GOODIX_SIGFM_BEST_MIN 150  /* minimum best score from any single sample */
 
 /* Captures below this feature count are effectively blank/failed touches. */
 #define GOODIX_MIN_CAPTURE_KEYPOINTS 20
+
+/* Raw12 frames hard-clip at ADC full scale wherever the finger is not in
+ * contact, so clipped pixels carry no finger signal. The TX-off subtraction
+ * cannot cancel the fixed sensor grid there (residual = clip - ref), so
+ * preprocessing fills clipped pixels with a white level taken from the
+ * unclipped interior instead of letting the inverted reference grid through. */
+#define GOODIX_RAW12_CLIP 4095
+
+/* Clipped fraction doubles as an exact contact-coverage metric. Enrollment
+ * stages with more than this fraction of non-contact pixels are rejected with
+ * a retry so stored templates keep full ridge coverage. */
+#define GOODIX_ENROLL_MAX_CLIPPED_FRACTION 0.10
 
 /* Timeouts in ms */
 #define GOODIX_CMD_TIMEOUT    1000
@@ -189,6 +205,15 @@ typedef enum {
   GOODIX_CAPTURE_NUM_STATES,
 } GoodixCaptureState;
 
+/* TX-off no-finger reference capture SSM */
+typedef enum {
+  GOODIX_REF_CAPTURE_EC_POWER_ON = 0,
+  GOODIX_REF_CAPTURE_EC_POWER_ON_DONE,
+  GOODIX_REF_CAPTURE_GET_IMAGE,
+  GOODIX_REF_CAPTURE_DECODE,
+  GOODIX_REF_CAPTURE_NUM_STATES,
+} GoodixRefCaptureState;
+
 /* Finger-up SSM (awaiting finger off) */
 typedef enum {
   GOODIX_FINGER_UP_FDT_UP_SETUP = 0,
@@ -210,7 +235,8 @@ typedef enum {
 
 /* Enroll SSM */
 typedef enum {
-  GOODIX_ENROLL_WAIT_FINGER = 0,
+  GOODIX_ENROLL_CAPTURE_REF = 0,
+  GOODIX_ENROLL_WAIT_FINGER,
   GOODIX_ENROLL_CAPTURE,
   GOODIX_ENROLL_PROCESS,
   GOODIX_ENROLL_WAIT_FINGER_UP,
@@ -220,7 +246,8 @@ typedef enum {
 
 /* Verify/Identify SSM */
 typedef enum {
-  GOODIX_VERIFY_WAIT_FINGER = 0,
+  GOODIX_VERIFY_CAPTURE_REF = 0,
+  GOODIX_VERIFY_WAIT_FINGER,
   GOODIX_VERIFY_CAPTURE,
   GOODIX_VERIFY_MATCH,
   GOODIX_VERIFY_FINISH,
@@ -290,8 +317,10 @@ struct _FpiDeviceGoodix53x5
   FpiSsm  *blocking_ssm;        /* Sub-SSM currently blocked on cancellable read */
   int      blocking_resume_state; /* SSM state to jump to on resume */
 
-  /* Captured 8-bit image from last scan */
-  guint8 *captured_image;   /* native 108x88 8-bit LCE-processed */
+  /* Captured images from last scan */
+  guint16 *reference_image; /* native 108x88 12-bit TX-off no-finger frame */
+  guint8  *captured_image;  /* native 108x88 8-bit processed frame */
+  double   captured_clipped_fraction; /* non-contact (clipped) pixel fraction */
 
   /* Enrollment tracking */
   GPtrArray *enroll_images; /* array of guint8* native images */
@@ -417,5 +446,7 @@ guint16 *goodix_device_decode_image (const guint8 *data,
 
 guint8  *goodix_device_image_to_8bit (const guint16 *img12,
                                       const guint16 *calib_img);
+
+double   goodix_device_image_clipped_fraction (const guint16 *img12);
 
 const guint8 *goodix_device_get_default_config (gsize *out_len);

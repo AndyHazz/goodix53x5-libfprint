@@ -24,7 +24,6 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 
 /* OTP hash lookup table (from driver_53x5.py) */
 static const guint8 otp_hash_table[256] = {
@@ -405,14 +404,24 @@ goodix_device_generate_fdt_up_base (const guint8        *fdt_data,
  * Decode 12-bit packed image data to 16-bit pixel array.
  * 6 bytes → 4 pixels, matching tool.py decode_image().
  *
- * Returns newly allocated array of GOODIX_SENSOR_PIXELS guint16 values.
+ * Returns newly allocated array of GOODIX_SENSOR_PIXELS guint16 values, or
+ * NULL if the decrypted payload is too short for a full raw12 frame.
  */
 guint16 *
 goodix_device_decode_image (const guint8 *data,
-                            gsize         data_len)
+                             gsize         data_len)
 {
-  guint16 *image = g_new0 (guint16, GOODIX_SENSOR_PIXELS);
+  guint16 *image;
   gsize pixel_idx = 0;
+
+  if (data_len < GOODIX_SENSOR_RAW12_BYTES)
+    {
+      fp_warn ("Truncated raw12 image payload: %zu < %d",
+               data_len, GOODIX_SENSOR_RAW12_BYTES);
+      return NULL;
+    }
+
+  image = g_new0 (guint16, GOODIX_SENSOR_PIXELS);
 
   for (gsize i = 0; i + 5 < data_len && pixel_idx + 3 < GOODIX_SENSOR_PIXELS; i += 6)
     {
@@ -425,66 +434,6 @@ goodix_device_decode_image (const guint8 *data,
     }
 
   return image;
-}
-
-/**
- * gaussian_blur_separable:
- *
- * In-place 2D Gaussian blur via two separable 1D passes.
- * Input: src (double array, W*H). Output: dst (double array, W*H).
- * Uses clamped border handling.
- */
-static void
-gaussian_blur_separable (const double *src,
-                         double     *dst,
-                         int         W,
-                         int         H,
-                         double      sigma)
-{
-  int radius = MAX (1, (int) ceil (3.0 * sigma));
-  int ksize = 2 * radius + 1;
-  double *kernel = g_malloc (ksize * sizeof (double));
-  double ksum = 0;
-  double *temp = g_malloc (W * H * sizeof (double));
-
-  /* Build normalized 1D Gaussian kernel */
-  for (int i = 0; i < ksize; i++)
-    {
-      double x = i - radius;
-      kernel[i] = exp (-0.5 * x * x / (sigma * sigma));
-      ksum += kernel[i];
-    }
-  for (int i = 0; i < ksize; i++)
-    kernel[i] /= ksum;
-
-  /* Horizontal pass */
-  for (int r = 0; r < H; r++)
-    for (int c = 0; c < W; c++)
-      {
-        double sum = 0;
-        for (int k = -radius; k <= radius; k++)
-          {
-            int cc = CLAMP (c + k, 0, W - 1);
-            sum += src[r * W + cc] * kernel[k + radius];
-          }
-        temp[r * W + c] = sum;
-      }
-
-  /* Vertical pass */
-  for (int r = 0; r < H; r++)
-    for (int c = 0; c < W; c++)
-      {
-        double sum = 0;
-        for (int k = -radius; k <= radius; k++)
-          {
-            int rr = CLAMP (r + k, 0, H - 1);
-            sum += temp[rr * W + c] * kernel[k + radius];
-          }
-        dst[r * W + c] = sum;
-      }
-
-  g_free (kernel);
-  g_free (temp);
 }
 
 static int
@@ -500,13 +449,21 @@ compare_double (const void *a,
 /**
  * goodix_device_image_to_8bit:
  *
- * Convert 12-bit sensor image to 8-bit grayscale with row/column bandpass.
+ * Convert 12-bit sensor image to 8-bit grayscale.
  *
- * First removes row/column mean structure from the raw sensor frame, then
- * subtracts a wide Gaussian lowpass (sigma=7.0), applies light smoothing
- * (sigma=0.7), then normalizes using the interior 2%..98% percentile range.
- * This keeps fingerprint ridge-scale detail while suppressing fixed grid
- * artefacts and preventing edge/outlier pixels from dominating contrast.
+ * Subtracts the TX-off no-finger reference frame, then normalizes using the
+ * interior 3%..97% percentile range. SIGFM applies CLAHE before SIFT feature
+ * extraction.
+ *
+ * Raw pixels at GOODIX_RAW12_CLIP are non-contact areas: the ADC clip
+ * destroys the fixed sensor pattern there, so the reference subtraction
+ * would leave the inverted reference grid behind. Clipped pixels carry no
+ * finger signal, so they are excluded from the normalization sample and
+ * filled with the unclipped interior's 99th-percentile residual, which maps
+ * above the p97 ceiling and renders as flat white with no SIFT keypoints.
+ * A frame with no unclipped interior pixels carries no finger signal at all
+ * and is returned as a flat white image rather than normalizing the bare
+ * reference grid.
  *
  * Returns newly allocated array of GOODIX_SENSOR_PIXELS guint8 values.
  */
@@ -518,68 +475,65 @@ goodix_device_image_to_8bit (const guint16 *img12,
   const int H = GOODIX_SENSOR_HEIGHT;
   const int N = GOODIX_SENSOR_PIXELS;
 
-  (void) calib_img;
-
   guint8 *img8 = g_malloc (N);
-  double *row_mean = g_new0 (double, H);
-  double *col_mean = g_new0 (double, W);
-  double *residual = g_malloc (N * sizeof (double));
-  double *lowpass = g_malloc (N * sizeof (double));
-  double *highpass = g_malloc (N * sizeof (double));
-  double *smoothed = g_malloc (N * sizeof (double));
+  double *corrected = g_malloc (N * sizeof (double));
   double *sample = g_malloc ((W - 2) * (H - 2) * sizeof (double));
   int sample_count = 0;
-  double global_mean = 0.0;
   double corr_min = G_MAXDOUBLE;
   double corr_max = -G_MAXDOUBLE;
 
-  for (int r = 0; r < H; r++)
-    for (int c = 0; c < W; c++)
-      {
-        double value = img12[r * W + c];
-
-        row_mean[r] += value;
-        col_mean[c] += value;
-        global_mean += value;
-      }
-
-  global_mean /= N;
-  for (int r = 0; r < H; r++)
-    row_mean[r] /= W;
-  for (int c = 0; c < W; c++)
-    col_mean[c] /= H;
-
-  for (int r = 0; r < H; r++)
-    for (int c = 0; c < W; c++)
-      residual[r * W + c] = img12[r * W + c] - row_mean[r] - col_mean[c] + global_mean;
-
-  gaussian_blur_separable (residual, lowpass, W, H, 7.0);
   for (int i = 0; i < N; i++)
-    highpass[i] = residual[i] - lowpass[i];
-
-  gaussian_blur_separable (highpass, smoothed, W, H, 0.7);
+    corrected[i] = calib_img != NULL ? img12[i] - calib_img[i] : img12[i];
 
   for (int r = 1; r < H - 1; r++)
     for (int c = 1; c < W - 1; c++)
-      sample[sample_count++] = smoothed[r * W + c];
+      if (img12[r * W + c] < GOODIX_RAW12_CLIP)
+        sample[sample_count++] = corrected[r * W + c];
+
+  if (sample_count == 0)
+    {
+      memset (img8, 255, N);
+      g_free (corrected);
+      g_free (sample);
+      return img8;
+    }
 
   qsort (sample, sample_count, sizeof (double), compare_double);
-  corr_min = sample[(int) (0.02 * (sample_count - 1))];
-  corr_max = sample[(int) (0.98 * (sample_count - 1))];
+  corr_min = sample[(int) (0.03 * (sample_count - 1))];
+  corr_max = sample[(int) (0.97 * (sample_count - 1))];
+
+  double white = sample[(int) (0.99 * (sample_count - 1))];
+
+  for (int i = 0; i < N; i++)
+    if (img12[i] >= GOODIX_RAW12_CLIP)
+      corrected[i] = white;
 
   double range = corr_max - corr_min;
   if (range < 1.0)
     range = 1.0;
 
   for (int i = 0; i < N; i++)
-    img8[i] = (guint8) CLAMP ((int) (((smoothed[i] - corr_min) * 255.0) / range), 0, 255);
+    img8[i] = (guint8) CLAMP ((int) (((corrected[i] - corr_min) * 255.0) / range), 0, 255);
 
-  g_free (row_mean);
-  g_free (col_mean);
-  g_free (residual);
-  g_free (lowpass);
-  g_free (highpass);
-  g_free (smoothed);
+  g_free (corrected);
   g_free (sample);
   return img8;
+}
+
+/**
+ * goodix_device_image_clipped_fraction:
+ *
+ * Fraction of raw12 pixels at ADC full scale, i.e. the non-contact area of
+ * the frame. Used as an exact contact-coverage metric for enrollment gating.
+ */
+double
+goodix_device_image_clipped_fraction (const guint16 *img12)
+{
+  int clipped = 0;
+
+  for (int i = 0; i < GOODIX_SENSOR_PIXELS; i++)
+    if (img12[i] >= GOODIX_RAW12_CLIP)
+      clipped++;
+
+  return (double) clipped / GOODIX_SENSOR_PIXELS;
 }

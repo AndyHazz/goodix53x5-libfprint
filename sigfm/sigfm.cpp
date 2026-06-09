@@ -150,8 +150,10 @@ int sigfm_match_score(SigfmImgInfo* frame, SigfmImgInfo* enrolled)
 {
     try {
         std::vector<std::vector<cv::DMatch>> points;
+        std::vector<std::vector<cv::DMatch>> backward;
         auto bfm = cv::BFMatcher::create();
         bfm->knnMatch(frame->descriptors, enrolled->descriptors, points, 2);
+        bfm->knnMatch(enrolled->descriptors, frame->descriptors, backward, 1);
         std::set<match> matches_unique;
         int nb_matched = 0;
         for (const auto& pts : points) {
@@ -160,6 +162,12 @@ int sigfm_match_score(SigfmImgInfo* frame, SigfmImgInfo* enrolled)
             }
             const cv::DMatch& match_1 = pts.at(0);
             if (match_1.distance < distance_match * pts.at(1).distance) {
+                if (static_cast<std::size_t>(match_1.trainIdx) >= backward.size() ||
+                    backward[match_1.trainIdx].empty() ||
+                    backward[match_1.trainIdx][0].trainIdx != match_1.queryIdx) {
+                    continue;
+                }
+
                 matches_unique.emplace(
                     match{frame->keypoints.at(match_1.queryIdx).pt,
                           enrolled->keypoints.at(match_1.trainIdx).pt});

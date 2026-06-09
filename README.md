@@ -102,37 +102,6 @@ You usually do not need to repeat the manual Meson edits after the first install
 
 ## Troubleshooting
 
-### Sleeping while fprintd is still running breaks fprintd
-
-`fprintd` waits 30 seconds after a successful login before quitting. If the
-system goes to sleep during that idle window, `fprintd` can break after resume
-and fingerprint unlock may report that no reader is available.
-
-The [ArchWiki fprint troubleshooting section](https://wiki.archlinux.org/title/Fprint#Sleeping_while_fprintd_is_still_running_breaks_fprintd)
-recommends killing `fprintd` before sleep so it is freshly activated after
-resume. Create and enable this systemd service:
-
-```ini
-# /etc/systemd/system/kill-fprintd-before-sleep.service
-[Unit]
-Description=Kill fprintd before sleep
-Before=sleep.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/systemctl kill fprintd.service
-
-[Install]
-WantedBy=sleep.target
-```
-
-Then reload systemd and enable the service:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable kill-fprintd-before-sleep.service
-```
-
 ### Uninstalling
 
 To remove the copied driver files from a libfprint source tree:
