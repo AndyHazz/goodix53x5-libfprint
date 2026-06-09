@@ -111,6 +111,10 @@ public:
                          bool> = true>
     constexpr stream& read(Iter&& begin, std::size_t dist)
     {
+        if (store_.size() < dist) {
+            throw std::runtime_error{"tried to read past end of stream"};
+        }
+
         std::copy(store_.begin(), store_.begin() + dist, begin);
         store_.erase(store_.begin(), store_.begin() + dist);
         return *this;

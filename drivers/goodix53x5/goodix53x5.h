@@ -311,6 +311,7 @@ struct _FpiDeviceGoodix53x5
   FpiMatchResult  pending_verify_result;
   FpPrint        *pending_identify_match;
   GError         *pending_result_error;
+  GError         *pending_action_error;
 
   /* Suspend/resume state */
   gboolean suspended;            /* TRUE between suspend() and resume() calls */
@@ -323,7 +324,7 @@ struct _FpiDeviceGoodix53x5
   double   captured_clipped_fraction; /* non-contact (clipped) pixel fraction */
 
   /* Enrollment tracking */
-  GPtrArray *enroll_images; /* array of guint8* native images */
+  GPtrArray *enroll_features; /* array of GBytes* serialized SIGFM features */
   gint       enroll_stage;
 };
 
