@@ -21,20 +21,41 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "Installing Goodix 53x5 driver into $LIBFPRINT_DIR ..."
 
-# Copy driver sources
+# Copy driver sources. Remove the target directory first so files deleted or
+# renamed by driver updates (e.g. the old goodix53x5-device.c) do not linger.
+rm -rf "$LIBFPRINT_DIR/libfprint/drivers/goodix53x5"
 mkdir -p "$LIBFPRINT_DIR/libfprint/drivers/goodix53x5"
 cp -v "$SCRIPT_DIR/drivers/goodix53x5/"* "$LIBFPRINT_DIR/libfprint/drivers/goodix53x5/"
 
 # Copy SIGFM library
+rm -rf "$LIBFPRINT_DIR/libfprint/sigfm"
 mkdir -p "$LIBFPRINT_DIR/libfprint/sigfm"
 cp -v "$SCRIPT_DIR/sigfm/"* "$LIBFPRINT_DIR/libfprint/sigfm/"
 
 MESON="$LIBFPRINT_DIR/libfprint/meson.build"
 ROOT_MESON="$LIBFPRINT_DIR/meson.build"
 
-# Check if driver is already registered
-if grep -q "'goodix53x5'" "$MESON"; then
+DRIVER_SOURCES="[ 'drivers/goodix53x5/goodix53x5.c', 'drivers/goodix53x5/goodix53x5-proto.c', 'drivers/goodix53x5/goodix53x5-crypto.c', 'drivers/goodix53x5/goodix53x5-transport.c', 'drivers/goodix53x5/goodix53x5-commands.c', 'drivers/goodix53x5/goodix53x5-session.c', 'drivers/goodix53x5/goodix53x5-scan.c', 'drivers/goodix53x5/goodix53x5-enroll.c', 'drivers/goodix53x5/goodix53x5-auth.c', 'drivers/goodix53x5/goodix53x5-match.c', 'drivers/goodix53x5/goodix53x5-calibration.c', 'drivers/goodix53x5/goodix53x5-image.c' ],"
+
+# Check if the driver is registered, and whether the registration matches the
+# current module layout. goodix53x5-commands.c only exists in the current
+# layout, so its absence from an existing entry means the source list is stale.
+if grep -q "'goodix53x5'" "$MESON" && grep -q "goodix53x5-commands.c" "$MESON"; then
     echo "Driver already registered in libfprint/meson.build"
+elif grep -q "'goodix53x5'" "$MESON"; then
+    echo ""
+    echo "========================================="
+    echo "MANUAL UPDATE REQUIRED"
+    echo "========================================="
+    echo ""
+    echo "An older goodix53x5 entry was found in $MESON."
+    echo "The driver module layout has changed; building with the old source"
+    echo "list will fail. Replace the existing 'goodix53x5' driver_sources"
+    echo "entry with:"
+    echo ""
+    echo "   'goodix53x5' :"
+    echo "       $DRIVER_SOURCES"
+    echo ""
 else
     echo ""
     echo "========================================="
@@ -45,7 +66,7 @@ else
     echo ""
     echo "1. In the driver_sources dictionary, add:"
     echo "   'goodix53x5' :"
-    echo "       [ 'drivers/goodix53x5/goodix53x5.c', 'drivers/goodix53x5/goodix53x5-proto.c', 'drivers/goodix53x5/goodix53x5-crypto.c', 'drivers/goodix53x5/goodix53x5-device.c' ],"
+    echo "       $DRIVER_SOURCES"
     echo ""
     echo "2. Before the libfprint_drivers static_library() call, add the SIGFM build:"
     echo "   opencv_inc = include_directories('/usr/include/opencv4')"

@@ -1,5 +1,5 @@
 /*
- * Goodix 53x5 driver for libfprint
+ * Goodix 53x5 driver for libfprint — Enrollment flow
  * Copyright (C) 2024 goodix-fp-linux-dev contributors
  *
  * This library is free software; you can redistribute it and/or
@@ -19,7 +19,8 @@
 
 #pragma once
 
-#include "fpi-device.h"
+#include "goodix53x5-private.h"
 
-G_DECLARE_FINAL_TYPE (FpiDeviceGoodix53x5, fpi_device_goodix53x5, FPI,
-                      DEVICE_GOODIX53X5, FpDevice)
+/* Reset enrollment action state and run the full enroll flow; reports
+ * completion through fpi_device_enroll_*. Implements FpDeviceClass::enroll. */
+void goodix_enroll_start (FpDevice *dev);

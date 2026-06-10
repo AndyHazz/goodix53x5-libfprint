@@ -1,5 +1,5 @@
 /*
- * Goodix 53x5 driver for libfprint
+ * Goodix 53x5 driver for libfprint — Image decoding and preprocessing
  * Copyright (C) 2024 goodix-fp-linux-dev contributors
  *
  * This library is free software; you can redistribute it and/or
@@ -19,7 +19,12 @@
 
 #pragma once
 
-#include "fpi-device.h"
+#include "goodix53x5-private.h"
 
-G_DECLARE_FINAL_TYPE (FpiDeviceGoodix53x5, fpi_device_goodix53x5, FPI,
-                      DEVICE_GOODIX53X5, FpDevice)
+guint16 *goodix_device_decode_image (const guint8 *data,
+                                     gsize         data_len);
+
+guint8  *goodix_device_image_to_8bit (const guint16 *img12,
+                                      const guint16 *calib_img);
+
+double   goodix_device_image_clipped_fraction (const guint16 *img12);

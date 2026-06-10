@@ -20,7 +20,7 @@
 #define FP_COMPONENT "goodix53x5"
 
 #include "drivers_api.h"
-#include "goodix53x5.h"
+#include "goodix53x5-proto.h"
 
 /*
  * Message format: [cmd_byte(1)][size(2 LE)][payload(N)][checksum(1)]
