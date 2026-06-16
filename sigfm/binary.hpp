@@ -26,6 +26,10 @@ class stream {
 public:
     stream() = default;
 
+    stream(const byte* begin, const byte* end) : view_{begin}, view_size_{static_cast<std::size_t>(end - begin)}
+    {
+    }
+
     template<
         typename Iter,
         std::enable_if_t<std::is_same_v<typename std::iterator_traits<
@@ -64,7 +68,7 @@ public:
     {
         using seg_store = std::array<byte, sizeof(T)>;
         alignas(T) seg_store s = {};
-        if (store_.size() < s.size()) {
+        if (size() < s.size()) {
             throw std::runtime_error{"tried to extract from too small stream"};
         }
         stream::read(s.begin(), s.end());
@@ -79,6 +83,7 @@ public:
                          bool> = true>
     constexpr stream& write(Iter&& begin, Iter&& end)
     {
+        compact();
         std::copy(std::forward<Iter>(begin), std::forward<Iter>(end),
                   std::back_inserter(store_));
         return *this;
@@ -111,24 +116,57 @@ public:
                          bool> = true>
     constexpr stream& read(Iter&& begin, std::size_t dist)
     {
-        if (store_.size() < dist) {
+        if (size() < dist) {
             throw std::runtime_error{"tried to read past end of stream"};
         }
 
-        std::copy(store_.begin(), store_.begin() + dist, begin);
-        store_.erase(store_.begin(), store_.begin() + dist);
+        if (view_ != nullptr) {
+            std::copy(view_ + pos_, view_ + pos_ + dist, begin);
+        } else {
+            std::copy(store_.begin() + pos_, store_.begin() + pos_ + dist, begin);
+        }
+        pos_ += dist;
         return *this;
     }
     byte* copy_buffer() const
     {
-        byte* raw = static_cast<byte*>(malloc(store_.size()));
-        std::copy(store_.begin(), store_.end(), raw);
+        const auto remaining = size();
+        byte* raw = static_cast<byte*>(malloc(remaining));
+        if (view_ != nullptr) {
+            std::copy(view_ + pos_, view_ + view_size_, raw);
+        } else {
+            std::copy(store_.begin() + pos_, store_.end(), raw);
+        }
         return raw;
     }
-    std::size_t size() const { return store_.size(); }
+    std::size_t size() const
+    {
+        return view_ != nullptr ? view_size_ - pos_ : store_.size() - pos_;
+    }
 
 private:
+    void compact()
+    {
+        if (view_ != nullptr) {
+            store_.assign(view_ + pos_, view_ + view_size_);
+            view_ = nullptr;
+            view_size_ = 0;
+            pos_ = 0;
+            return;
+        }
+
+        if (pos_ == 0) {
+            return;
+        } else {
+            store_.erase(store_.begin(), store_.begin() + pos_);
+        }
+        pos_ = 0;
+    }
+
     std::vector<byte> store_;
+    const byte* view_ = nullptr;
+    std::size_t view_size_ = 0;
+    std::size_t pos_ = 0;
 };
 
 template<>
