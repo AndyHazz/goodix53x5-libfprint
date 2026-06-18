@@ -8,6 +8,15 @@ work_dir="${GOODIX_LOCAL_BUILD_DIR:-$repo_dir/.build}"
 libfprint_dir="$work_dir/libfprint"
 libfprint_ref="${GOODIX_LIBFPRINT_REF:-v1.94.10}"
 build_dir="${GOODIX_MESON_BUILDDIR:-builddir}"
+meson_options=(
+  --prefix=/usr
+  -Ddrivers=goodix53x5
+  -Dudev_hwdb=disabled
+  -Dudev_rules=disabled
+  -Dintrospection=false
+  -Dinstalled-tests=false
+  -Ddoc=false
+)
 
 mkdir -p "$work_dir"
 
@@ -33,9 +42,9 @@ if ! grep -q "'goodix53x5'" "$libfprint_dir/libfprint/meson.build"; then
 fi
 
 if [ -d "$libfprint_dir/$build_dir" ]; then
-  meson setup "$libfprint_dir/$build_dir" "$libfprint_dir" --reconfigure
+  meson setup "$libfprint_dir/$build_dir" "$libfprint_dir" --reconfigure "${meson_options[@]}"
 else
-  meson setup "$libfprint_dir/$build_dir" "$libfprint_dir" --prefix=/usr -Dinstalled-tests=false -Ddoc=false
+  meson setup "$libfprint_dir/$build_dir" "$libfprint_dir" "${meson_options[@]}"
 fi
 
 ninja -C "$libfprint_dir/$build_dir"

@@ -3,10 +3,10 @@
 #
 # Usage: ./install.sh /path/to/libfprint
 #
-# After running this script, reconfigure and build libfprint:
-#   cd /path/to/libfprint/builddir
-#   meson setup --reconfigure ..
-#   ninja && sudo ninja install
+# After running this script, configure and build libfprint:
+#   cd /path/to/libfprint
+#   meson setup builddir --prefix=/usr -Ddrivers=goodix53x5 -Dudev_hwdb=disabled -Dudev_rules=disabled -Dintrospection=false -Dinstalled-tests=false -Ddoc=false
+#   ninja -C builddir && sudo ninja -C builddir install
 
 set -euo pipefail
 
@@ -37,26 +37,7 @@ ROOT_MESON="$LIBFPRINT_DIR/meson.build"
 
 DRIVER_SOURCES="[ 'drivers/goodix53x5/goodix53x5.c', 'drivers/goodix53x5/goodix53x5-proto.c', 'drivers/goodix53x5/goodix53x5-crypto.c', 'drivers/goodix53x5/goodix53x5-transport.c', 'drivers/goodix53x5/goodix53x5-commands.c', 'drivers/goodix53x5/goodix53x5-session.c', 'drivers/goodix53x5/goodix53x5-scan.c', 'drivers/goodix53x5/goodix53x5-enroll.c', 'drivers/goodix53x5/goodix53x5-auth.c', 'drivers/goodix53x5/goodix53x5-match.c', 'drivers/goodix53x5/goodix53x5-calibration.c', 'drivers/goodix53x5/goodix53x5-image.c' ],"
 
-# Check if the driver is registered, and whether the registration matches the
-# current module layout. goodix53x5-commands.c only exists in the current
-# layout, so its absence from an existing entry means the source list is stale.
-if grep -q "'goodix53x5'" "$MESON" && grep -q "goodix53x5-commands.c" "$MESON"; then
-    echo "Driver already registered in libfprint/meson.build"
-elif grep -q "'goodix53x5'" "$MESON"; then
-    echo ""
-    echo "========================================="
-    echo "MANUAL UPDATE REQUIRED"
-    echo "========================================="
-    echo ""
-    echo "An older goodix53x5 entry was found in $MESON."
-    echo "The driver module layout has changed; building with the old source"
-    echo "list will fail. Replace the existing 'goodix53x5' driver_sources"
-    echo "entry with:"
-    echo ""
-    echo "   'goodix53x5' :"
-    echo "       $DRIVER_SOURCES"
-    echo ""
-else
+print_manual_steps() {
     echo ""
     echo "========================================="
     echo "MANUAL STEPS REQUIRED"
@@ -90,7 +71,37 @@ else
     echo "5. In the root meson.build, add 'goodix53x5' to the default_drivers list"
     echo "   and add: 'goodix53x5' : [ 'openssl' ] to the driver_helpers dict."
     echo ""
+}
+
+# Check if the driver is registered, and whether the registration matches the
+# current module layout. goodix53x5-commands.c only exists in the current
+# layout, so its absence from an existing entry means the source list is stale.
+if grep -q "'goodix53x5'" "$MESON" && grep -q "goodix53x5-commands.c" "$MESON"; then
+    echo "Driver already registered in libfprint/meson.build"
+elif grep -q "'goodix53x5'" "$MESON"; then
+    echo ""
+    echo "========================================="
+    echo "MANUAL UPDATE REQUIRED"
+    echo "========================================="
+    echo ""
+    echo "An older goodix53x5 entry was found in $MESON."
+    echo "The driver module layout has changed; building with the old source"
+    echo "list will fail. Replace the existing 'goodix53x5' driver_sources"
+    echo "entry with:"
+    echo ""
+    echo "   'goodix53x5' :"
+    echo "       $DRIVER_SOURCES"
+    echo ""
+else
+    echo "Applying Meson integration patch ..."
+    if patch --dry-run -d "$LIBFPRINT_DIR" -p1 < "$SCRIPT_DIR/meson-integration.patch" >/dev/null; then
+        patch -d "$LIBFPRINT_DIR" -p1 < "$SCRIPT_DIR/meson-integration.patch"
+        echo "Meson integration patch applied."
+    else
+        echo "Could not apply meson-integration.patch automatically."
+        print_manual_steps
+    fi
 fi
 
 echo ""
-echo "Done. Now reconfigure and rebuild libfprint."
+echo "Done. Now configure and build libfprint. See README.md for distro-specific commands."
