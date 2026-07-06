@@ -15,10 +15,12 @@
 // they validate the geometry contract, not the end-to-end false-accept rate
 // (that is measured on-device; see the README).
 //
-// Build (run from the repo root):
+// Build (run from the repo root; OpenCV 5 names the features2d library
+// opencv_features, OpenCV 4 names it opencv_features2d):
 //   g++ -std=c++17 tests/test_sigfm_match.cpp sigfm/sigfm.cpp \
-//       -I/usr/include/opencv4 \
-//       -lopencv_core -lopencv_features2d -lopencv_imgproc -lopencv_flann \
+//       $(pkg-config --cflags opencv5 2>/dev/null || pkg-config --cflags opencv4) \
+//       -lopencv_core -lopencv_imgproc -lopencv_flann \
+//       $(pkg-config --exists opencv5 && echo -lopencv_features || echo -lopencv_features2d) \
 //       -o /tmp/test_sigfm && /tmp/test_sigfm
 
 #include "../sigfm/img-info.hpp"
