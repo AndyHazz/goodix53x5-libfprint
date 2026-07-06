@@ -66,6 +66,48 @@ libsigfm = static_library('sigfm',
     install: false)
 EOF
 
+print_opencv_migration_steps() {
+    echo ""
+    echo "========================================="
+    echo "MANUAL UPDATE REQUIRED"
+    echo "========================================="
+    echo ""
+    echo "Your libfprint tree was set up when this driver only supported"
+    echo "OpenCV 4. It needs a small edit so it also builds against OpenCV 5,"
+    echo "otherwise the build will fail with an error like:"
+    echo ""
+    echo "    ERROR: Include dir /usr/include/opencv4 does not exist."
+    echo ""
+    echo "This script could not make the edit automatically because the file"
+    echo "differs from the layout it expects. To fix it by hand:"
+    echo ""
+    echo "1. Open this file in a text editor:"
+    echo ""
+    echo "       $MESON"
+    echo ""
+    echo "2. Find the line containing:"
+    echo ""
+    echo "       include_directories('/usr/include/opencv4')"
+    echo ""
+    echo "3. Delete the section of the file that sets up OpenCV and sigfm."
+    echo "   It starts a couple of lines above that line (at a comment"
+    echo "   mentioning SIGFM) and ends with these lines:"
+    echo ""
+    echo "       libsigfm = static_library('sigfm',"
+    echo "           'sigfm/sigfm.cpp',"
+    echo "           dependencies: [opencv_dep],"
+    echo "           cpp_args: ['-std=c++17'],"
+    echo "           install: false)"
+    echo ""
+    echo "4. Paste this in its place (without the leading spaces):"
+    echo ""
+    echo "$SIGFM_MESON_BLOCK" | sed 's/^/       /'
+    echo ""
+    echo "5. Save the file, then re-run this install script. If it prints"
+    echo "   no warnings, continue with the normal build steps in README.md."
+    echo ""
+}
+
 # Trees integrated before OpenCV 5 support hardcode the OpenCV 4 include path,
 # which fails to configure once the distro ships OpenCV 5. Replace the whole
 # SIGFM/OpenCV block (start marker through libsigfm) with the current version.
@@ -75,7 +117,7 @@ migrate_sigfm_block() {
     fi
     if grep -q "^# SIGFM: SIFT-based fingerprint matching for small sensors$" "$MESON"; then
         echo "Updating OpenCV 4-only SIGFM block for OpenCV 4/5 ..."
-        awk -v newblock="$SIGFM_MESON_BLOCK" '
+        if awk -v newblock="$SIGFM_MESON_BLOCK" '
             /^# SIGFM: SIFT-based fingerprint matching for small sensors$/ && !done {
                 print newblock
                 skipping = 1
@@ -87,49 +129,18 @@ migrate_sigfm_block() {
                 next
             }
             { print }
-        ' "$MESON" > "$MESON.tmp"
-        mv "$MESON.tmp" "$MESON"
-        echo "SIGFM block updated. Reconfigure your build directory before rebuilding."
+            END { if (skipping) exit 1 }
+        ' "$MESON" > "$MESON.tmp"; then
+            mv "$MESON.tmp" "$MESON"
+            echo "SIGFM block updated. Reconfigure your build directory before rebuilding."
+        else
+            rm -f "$MESON.tmp"
+            echo "Could not update the SIGFM block automatically because the end marker was not found."
+            echo "Please use the manual update steps below."
+            print_opencv_migration_steps
+        fi
     else
-        echo ""
-        echo "========================================="
-        echo "MANUAL UPDATE REQUIRED"
-        echo "========================================="
-        echo ""
-        echo "Your libfprint tree was set up when this driver only supported"
-        echo "OpenCV 4. It needs a small edit so it also builds against OpenCV 5,"
-        echo "otherwise the build will fail with an error like:"
-        echo ""
-        echo "    ERROR: Include dir /usr/include/opencv4 does not exist."
-        echo ""
-        echo "This script could not make the edit automatically because the file"
-        echo "differs from the layout it expects. To fix it by hand:"
-        echo ""
-        echo "1. Open this file in a text editor:"
-        echo ""
-        echo "       $MESON"
-        echo ""
-        echo "2. Find the line containing:"
-        echo ""
-        echo "       include_directories('/usr/include/opencv4')"
-        echo ""
-        echo "3. Delete the section of the file that sets up OpenCV and sigfm."
-        echo "   It starts a couple of lines above that line (at a comment"
-        echo "   mentioning SIGFM) and ends with these lines:"
-        echo ""
-        echo "       libsigfm = static_library('sigfm',"
-        echo "           'sigfm/sigfm.cpp',"
-        echo "           dependencies: [opencv_dep],"
-        echo "           cpp_args: ['-std=c++17'],"
-        echo "           install: false)"
-        echo ""
-        echo "4. Paste this in its place (without the leading spaces):"
-        echo ""
-        echo "$SIGFM_MESON_BLOCK" | sed 's/^/       /'
-        echo ""
-        echo "5. Save the file, then re-run this install script. If it prints"
-        echo "   no warnings, continue with the normal build steps in README.md."
-        echo ""
+        print_opencv_migration_steps
     fi
 }
 
