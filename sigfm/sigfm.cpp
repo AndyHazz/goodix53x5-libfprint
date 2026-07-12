@@ -193,10 +193,32 @@ int sigfm_match_score(SigfmImgInfo* frame, SigfmImgInfo* enrolled)
 {
     try {
         std::vector<std::vector<cv::DMatch>> points;
-        std::vector<std::vector<cv::DMatch>> backward;
         auto bfm = cv::BFMatcher::create();
         bfm->knnMatch(frame->descriptors, enrolled->descriptors, points, 2);
-        bfm->knnMatch(enrolled->descriptors, frame->descriptors, backward, 1);
+        std::vector<int> candidate_positions(enrolled->descriptors.rows, -1);
+        std::vector<int> candidate_indices;
+        cv::Mat candidate_descriptors;
+
+        for (const auto& pts : points) {
+            if (pts.size() < 2) {
+                continue;
+            }
+
+            const cv::DMatch& match_1 = pts.at(0);
+            if (match_1.distance < distance_match * pts.at(1).distance &&
+                candidate_positions[match_1.trainIdx] < 0) {
+                candidate_positions[match_1.trainIdx] = candidate_indices.size();
+                candidate_indices.push_back(match_1.trainIdx);
+                candidate_descriptors.push_back(enrolled->descriptors.row(match_1.trainIdx));
+            }
+        }
+
+        if (candidate_indices.size() < min_match) {
+            return 0;
+        }
+
+        std::vector<std::vector<cv::DMatch>> backward;
+        bfm->knnMatch(candidate_descriptors, frame->descriptors, backward, 1);
         std::set<match> matches_unique;
         int nb_matched = 0;
         for (const auto& pts : points) {
@@ -205,9 +227,9 @@ int sigfm_match_score(SigfmImgInfo* frame, SigfmImgInfo* enrolled)
             }
             const cv::DMatch& match_1 = pts.at(0);
             if (match_1.distance < distance_match * pts.at(1).distance) {
-                if (static_cast<std::size_t>(match_1.trainIdx) >= backward.size() ||
-                    backward[match_1.trainIdx].empty() ||
-                    backward[match_1.trainIdx][0].trainIdx != match_1.queryIdx) {
+                const int candidate_position = candidate_positions[match_1.trainIdx];
+                if (candidate_position < 0 || backward[candidate_position].empty() ||
+                    backward[candidate_position][0].trainIdx != match_1.queryIdx) {
                     continue;
                 }
 
