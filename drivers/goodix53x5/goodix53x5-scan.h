@@ -27,7 +27,7 @@ void goodix_scan_start_ref_capture_subsm (FpiSsm   *parent_ssm,
                                           FpDevice *dev);
 
 /* Power the sensor and block (cancellably) until a validated finger-down
- * FDT event arrives. Filters temperature false positives. */
+ * FDT event arrives. Filters false FDT-down interrupts. */
 void goodix_scan_start_finger_wait_subsm (FpiSsm   *parent_ssm,
                                           FpDevice *dev);
 

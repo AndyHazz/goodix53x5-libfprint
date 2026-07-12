@@ -132,6 +132,12 @@ gboolean goodix_cmd_parse_config_reply (FpDevice *dev);
 /* TRUE if the EC power control reply reports success. */
 gboolean goodix_cmd_parse_ec_control_reply (FpDevice *dev);
 
+/* Parse a manual FDT reading returned by goodix_cmd_fdt_manual(). */
+gboolean goodix_cmd_parse_fdt_manual_reply (FpDevice      *dev,
+                                             const guint8 **out_payload,
+                                             gsize         *out_payload_len,
+                                             GError       **error);
+
 /* Parse an FDT down/up event delivered after goodix_cmd_fdt_down_setup() /
  * goodix_cmd_fdt_up_setup(). The payload layout is
  * [irq_status(2)][touch_flag(2)][fdt_data(GOODIX_FDT_BASE_LEN)]. */
