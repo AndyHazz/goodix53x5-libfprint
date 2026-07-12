@@ -348,6 +348,27 @@ goodix_cmd_parse_ec_control_reply (FpDevice *dev)
 }
 
 gboolean
+goodix_cmd_parse_fdt_manual_reply (FpDevice      *dev,
+                                   const guint8 **out_payload,
+                                   gsize         *out_payload_len,
+                                   GError       **error)
+{
+  if (!goodix_parse_reply_exact (dev, GOODIX_PROTO_CATEGORY_FDT,
+                                 GOODIX_PROTO_CMD_FDT_MANUAL,
+                                 out_payload, out_payload_len, error))
+    return FALSE;
+
+  if (*out_payload_len < 4 + GOODIX_FDT_BASE_LEN)
+    {
+      g_set_error (error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_PROTO,
+                   "Manual FDT reply is too short: %zu", *out_payload_len);
+      return FALSE;
+    }
+
+  return TRUE;
+}
+
+gboolean
 goodix_cmd_parse_fdt_event (FpDevice      *dev,
                             gboolean       up,
                             const guint8 **out_payload,

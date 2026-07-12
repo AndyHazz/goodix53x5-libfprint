@@ -29,6 +29,8 @@
 
 #include <string.h>
 
+#define GOODIX_ENROLL_RELEASE_SETTLE_MS 350
+
 /* Enroll SSM */
 typedef enum {
   GOODIX_ENROLL_REINIT = 0,
@@ -65,6 +67,15 @@ goodix_enroll_ssm_handler (FpiSsm   *ssm,
       break;
 
     case GOODIX_ENROLL_CAPTURE_REF:
+      if (self->cancel && g_cancellable_is_cancelled (self->cancel))
+        {
+          fpi_ssm_mark_failed (ssm,
+                               g_error_new_literal (G_IO_ERROR,
+                                                    G_IO_ERROR_CANCELLED,
+                                                    "Enrollment cancelled"));
+          return;
+        }
+
       goodix_scan_start_ref_capture_subsm (ssm, dev);
       break;
 
@@ -141,7 +152,21 @@ goodix_enroll_ssm_handler (FpiSsm   *ssm,
 
     case GOODIX_ENROLL_NEXT:
       if (self->enroll_stage < GOODIX_ENROLL_SAMPLES)
-        fpi_ssm_jump_to_state (ssm, GOODIX_ENROLL_CAPTURE_REF);
+        {
+          if (self->cancel && g_cancellable_is_cancelled (self->cancel))
+            {
+              fpi_ssm_mark_failed (ssm,
+                                   g_error_new_literal (G_IO_ERROR,
+                                                        G_IO_ERROR_CANCELLED,
+                                                        "Enrollment cancelled"));
+              return;
+            }
+
+          fp_dbg ("Waiting %dms for enrollment release to settle",
+                  GOODIX_ENROLL_RELEASE_SETTLE_MS);
+          fpi_ssm_jump_to_state_delayed (ssm, GOODIX_ENROLL_CAPTURE_REF,
+                                         GOODIX_ENROLL_RELEASE_SETTLE_MS);
+        }
       else
         fpi_ssm_mark_completed (ssm);
       break;

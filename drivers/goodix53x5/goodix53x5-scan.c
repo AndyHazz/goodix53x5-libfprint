@@ -240,34 +240,31 @@ goodix_finger_wait_ssm_handler (FpiSsm   *ssm,
       break;
 
     case GOODIX_FINGER_WAIT_FDT_CHECK:
-      /* FDT manual TX-off to verify it's a real touch, not temperature */
+      /* FDT manual TX-off to verify the interrupt moved away from baseline. */
       goodix_cmd_fdt_manual (ssm, dev, FALSE, self->calib.fdt_base_manual);
       break;
 
     case GOODIX_FINGER_WAIT_VALIDATE:
       {
-        /* Parse manual FDT response and check if it's a temperature event */
-        guint8 cat, cmd;
+        /* Parse manual FDT response and check for a false FDT-down event. */
+        g_autoptr(GError) error = NULL;
         const guint8 *pl;
         gsize pl_len;
 
-        if (!goodix_parse_reply (dev, &cat, &cmd, &pl, &pl_len, NULL) ||
-            pl_len < 4 + GOODIX_FDT_BASE_LEN)
+        if (!goodix_cmd_parse_fdt_manual_reply (dev, &pl, &pl_len, &error))
           {
-            fpi_ssm_mark_failed (ssm,
-                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
-                                                           "Failed to parse FDT check"));
+            fpi_ssm_mark_failed (ssm, g_steal_pointer (&error));
             return;
           }
 
-        /* If fdt_base_valid == TRUE, it's a temperature event (false alarm) */
+        /* If the event and immediate manual reading still match, the interrupt
+         * was baseline drift/noise rather than a stable finger-down. */
         if (goodix_device_is_fdt_base_valid (self->fdt_event_data,
                                              pl + 4,
                                              GOODIX_FDT_BASE_LEN,
                                              self->calib.delta_fdt))
           {
-            fp_dbg ("Temperature event detected, retrying finger wait");
-            /* Re-arm FDT down detection and wait again */
+            fp_dbg ("False FDT down event detected, retrying finger wait");
             fpi_ssm_jump_to_state (ssm, GOODIX_FINGER_WAIT_FDT_DOWN_SETUP);
             return;
           }

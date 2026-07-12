@@ -119,6 +119,7 @@ struct _FpiDeviceGoodix53x5
 
   /* Temporary FDT data from calibration */
   guint8 *fdt_data_tx_on;
+  guint8  open_fdt_retries;
 
   /* OTP raw data */
   guint8 *otp_data;

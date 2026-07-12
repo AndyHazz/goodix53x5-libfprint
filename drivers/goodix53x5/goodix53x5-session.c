@@ -29,6 +29,8 @@
 #include <string.h>
 #include <openssl/rand.h>
 
+#define GOODIX_OPEN_FDT_MAX_RETRIES 2
+
 /* Open SSM — full device initialization */
 typedef enum {
   GOODIX_OPEN_USB_RESET = 0,
@@ -428,6 +430,7 @@ goodix_open_ssm_handler (FpiSsm   *ssm,
         self->gtls.hmac_client_counter = self->gtls.hmac_client_counter_init;
         self->gtls.hmac_server_counter = self->gtls.hmac_server_counter_init;
         self->gtls.state = 5;
+        self->open_fdt_retries = 0;
 
         fp_info ("GTLS handshake completed");
 
@@ -461,24 +464,19 @@ goodix_open_ssm_handler (FpiSsm   *ssm,
     case GOODIX_OPEN_VALIDATE_FDT:
       {
         /* Parse FDT response and save */
-        guint8 cat, cmd;
+        g_autoptr(GError) error = NULL;
         const guint8 *pl;
         gsize pl_len;
 
-        if (!goodix_parse_reply (dev, &cat, &cmd, &pl, &pl_len, NULL))
+        if (!goodix_cmd_parse_fdt_manual_reply (dev, &pl, &pl_len, &error))
           {
-            fpi_ssm_mark_failed (ssm,
-                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
-                                                           "Failed to parse FDT response"));
+            fpi_ssm_mark_failed (ssm, g_steal_pointer (&error));
             return;
           }
 
         /* FDT data is the payload after 4 bytes of irq+touch_flag */
-        if (pl_len >= 4 + GOODIX_FDT_BASE_LEN)
-          {
-            g_free (self->fdt_data_tx_on);
-            self->fdt_data_tx_on = g_memdup2 (pl + 4, GOODIX_FDT_BASE_LEN);
-          }
+        g_free (self->fdt_data_tx_on);
+        self->fdt_data_tx_on = g_memdup2 (pl + 4, GOODIX_FDT_BASE_LEN);
 
         fpi_ssm_next_state (ssm);
       }
@@ -492,26 +490,38 @@ goodix_open_ssm_handler (FpiSsm   *ssm,
     case GOODIX_OPEN_VALIDATE_FDT_2:
       {
         /* Parse and validate second FDT */
-        guint8 cat, cmd;
+        g_autoptr(GError) error = NULL;
         const guint8 *pl;
         gsize pl_len;
 
-        if (!goodix_parse_reply (dev, &cat, &cmd, &pl, &pl_len, NULL))
+        if (!goodix_cmd_parse_fdt_manual_reply (dev, &pl, &pl_len, &error))
           {
-            fpi_ssm_mark_failed (ssm,
-                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
-                                                           "Failed to parse second FDT"));
+            fpi_ssm_mark_failed (ssm, g_steal_pointer (&error));
             return;
           }
 
         /* Validate against the open-time FDT base we just recorded. */
-        if (pl_len >= 4 + GOODIX_FDT_BASE_LEN && self->fdt_data_tx_on)
+        if (!goodix_device_is_fdt_base_valid (pl + 4,
+                                              self->fdt_data_tx_on,
+                                              GOODIX_FDT_BASE_LEN,
+                                              self->calib.delta_fdt))
           {
-            if (!goodix_device_is_fdt_base_valid (pl + 4,
-                                                  self->fdt_data_tx_on,
-                                                  GOODIX_FDT_BASE_LEN,
-                                                  self->calib.delta_fdt))
-              fp_warn ("Second FDT validation failed, continuing anyway");
+            if (self->open_fdt_retries++ < GOODIX_OPEN_FDT_MAX_RETRIES)
+              {
+                fp_warn ("Open FDT validation unstable, retrying (%u/%u)",
+                         self->open_fdt_retries,
+                         GOODIX_OPEN_FDT_MAX_RETRIES);
+                g_free (self->fdt_data_tx_on);
+                self->fdt_data_tx_on = g_memdup2 (pl + 4,
+                                                  GOODIX_FDT_BASE_LEN);
+                fpi_ssm_jump_to_state (ssm, GOODIX_OPEN_FDT_TX_ON_2);
+                return;
+              }
+
+            fpi_ssm_mark_failed (ssm,
+                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                                           "Open FDT baseline did not stabilize"));
+            return;
           }
 
         fpi_ssm_next_state (ssm);
