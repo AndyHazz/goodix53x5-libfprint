@@ -20,10 +20,15 @@ The sensor provides raw 12-bit capacitive images encrypted with a TLS-like proto
 
 1. Initializes the sensor: PSK exchange, GTLS handshake, config upload, FDT calibration
 2. Detects finger placement via FDT (Finger Detection Threshold) events
-3. Captures and decrypts the fingerprint image
-4. Matches using **SIGFM** (SIFT-based fingerprint matching via OpenCV)
+3. Captures and decrypts a TX-off no-finger reference and live fingerprint images
+4. Subtracts the TX-off reference, normalizes the live capture, and extracts **SIGFM** features
+5. Matches using **SIGFM** (SIFT-based fingerprint matching via OpenCV)
 
-Fingerprint matching uses SIFT keypoints with CLAHE preprocessing, Lowe's ratio test, and pairwise geometric verification. The driver uses this SIGFM path instead of libfprint's usual minutiae matcher for the small 108x88 captures.
+Fingerprint matching uses SIFT keypoints with CLAHE preprocessing, Lowe's ratio test, mutual nearest-neighbor filtering, and pairwise geometric verification. The driver uses this SIGFM path instead of libfprint's usual minutiae matcher for the small 108x88 captures.
+
+The current preprocessing pipeline is shown below:
+
+<img src="images/goodix53x5-preprocessing-pipeline.png?v=20260610" alt="Goodix 53x5 preprocessing pipeline" width="1000">
 
 ## Dependencies
 
@@ -101,37 +106,6 @@ sudo systemctl restart fprintd
 You usually do not need to repeat the manual Meson edits after the first install.
 
 ## Troubleshooting
-
-### Sleeping while fprintd is still running breaks fprintd
-
-`fprintd` waits 30 seconds after a successful login before quitting. If the
-system goes to sleep during that idle window, `fprintd` can break after resume
-and fingerprint unlock may report that no reader is available.
-
-The [ArchWiki fprint troubleshooting section](https://wiki.archlinux.org/title/Fprint#Sleeping_while_fprintd_is_still_running_breaks_fprintd)
-recommends killing `fprintd` before sleep so it is freshly activated after
-resume. Create and enable this systemd service:
-
-```ini
-# /etc/systemd/system/kill-fprintd-before-sleep.service
-[Unit]
-Description=Kill fprintd before sleep
-Before=sleep.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/systemctl kill fprintd.service
-
-[Install]
-WantedBy=sleep.target
-```
-
-Then reload systemd and enable the service:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable kill-fprintd-before-sleep.service
-```
 
 ### Uninstalling
 
@@ -229,17 +203,19 @@ fprintd-enroll
 
 ## Technical Notes
 
-- **SIGFM matching** uses OpenCV SIFT features with CLAHE contrast enhancement, Lowe's ratio test, and pairwise geometric scoring. Verify/identify accept a print when the best enrolled-sample score is `>= 14` (`GOODIX_SIGFM_BEST_MIN`).
-- **8 enrollment samples** are stored as processed 108x88 8-bit images. During verification, SIFT features are extracted from each stored sample and compared with the live capture.
-- **Image preprocessing** uses a row/column bandpass: it removes row/column mean structure, subtracts a wide Gaussian lowpass, applies light smoothing, then normalizes to 8-bit.
+- **TX-off preprocessing** subtracts a no-finger reference frame from each live 12-bit capture, then normalizes the unclipped interior pixels using the 3%..97% percentile range.
+- **Clipped non-contact areas** at raw value `4095` are excluded from normalization and filled from the unclipped interior's 99th-percentile residual. This renders non-contact regions flat white instead of preserving the inverted reference grid.
+- **Enrollment coverage** rejects samples with more than 10% clipped/non-contact pixels and asks for another touch, so stored templates keep useful ridge coverage.
+- **SIGFM matching** uses OpenCV SIFT features with CLAHE contrast enhancement, Lowe's ratio test, mutual nearest-neighbor filtering, and pairwise geometric verification. Verify/identify accept a print when the best enrolled-sample score is `>= 150` (`GOODIX_SIGFM_BEST_MIN`).
+- **8 enrollment samples** are stored as serialized SIGFM feature templates, not raw or processed images. If you enrolled with an older preprocessing/template format, re-enroll your fingers after installing this version.
 
 ## Matching accuracy and security
 
 This is a small (108x88 px) press sensor with SIFT-based matching, so treat it as **convenience-grade** authentication rather than a high-security factor.
 
-An earlier version of this driver could accept non-enrolled fingers ([issue #3](https://github.com/AndyHazz/goodix53x5-libfprint/issues/3)). That was traced to the image preprocessing, not the matcher: the current row/column bandpass front-end produces much cleaner ridge detail, which separates genuine and impostor captures well. In on-device testing after this change, enrolled fingers scored well above the accept gate while non-enrolled fingers scored at or near zero.
+An earlier version of this driver could accept non-enrolled fingers ([issue #3](https://github.com/AndyHazz/goodix53x5-libfprint/issues/3)). That was traced to the image preprocessing, not the matcher: the current TX-off reference subtraction and clipped-area whitening produce much cleaner ridge detail, which separates genuine and impostor captures well. In on-device testing after this change, enrolled fingers scored well above the accept gate while non-enrolled fingers scored at or near zero.
 
-The accept gate is `GOODIX_SIGFM_BEST_MIN` in `goodix53x5.h` (default `14`). Raising it makes acceptance stricter - fewer false accepts at the cost of more re-presses of a genuine finger; lowering it does the reverse. The default suits typical day-to-day login on this sensor; tune it to taste.
+The accept gate is `GOODIX_SIGFM_BEST_MIN` in `goodix53x5.h` (default `150`). Raising it makes acceptance stricter - fewer false accepts at the cost of more re-presses of a genuine finger; lowering it does the reverse. The default suits typical day-to-day login on this sensor; tune it to taste.
 
 ## File Structure
 
@@ -256,6 +232,9 @@ sigfm/
   sigfm.cpp              - SIFT feature extraction and matching (with CLAHE)
   binary.hpp             - Binary serialization for print storage
   img-info.hpp           - SigfmImgInfo struct (keypoints + descriptors)
+
+images/
+  goodix53x5-preprocessing-pipeline.png - Preprocessing pipeline visualization
 ```
 
 ## Credits

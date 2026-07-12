@@ -33,11 +33,19 @@
 #include <fstream>
 #include <iterator>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 
 #include <opencv2/opencv.hpp>
 #include <vector>
+
+namespace {
+constexpr std::size_t serialized_keypoint_size = sizeof(int) * 2 + sizeof(float) * 5;
+constexpr std::size_t max_serialized_keypoints = 2048;
+constexpr int sift_descriptor_cols = 128;
+constexpr int sift_descriptor_type = CV_32F;
+} // namespace
 
 namespace bin {
 
@@ -54,7 +62,35 @@ struct deserializer<SigfmImgInfo> : public std::true_type {
     static SigfmImgInfo deserialize(stream& in)
     {
         SigfmImgInfo info;
-        in >> info.keypoints >> info.descriptors;
+
+        std::size_t keypoint_count;
+        in >> keypoint_count;
+        if (keypoint_count > max_serialized_keypoints ||
+            keypoint_count > in.size() / serialized_keypoint_size) {
+            throw std::runtime_error{"invalid SIGFM keypoint count"};
+        }
+
+        info.keypoints.reserve(keypoint_count);
+        for (std::size_t i = 0; i < keypoint_count; i++) {
+            cv::KeyPoint keypoint;
+            in >> keypoint;
+            info.keypoints.emplace_back(std::move(keypoint));
+        }
+
+        int type, rows, cols;
+        in >> type >> rows >> cols;
+        if (type != sift_descriptor_type || rows < 0 || cols != sift_descriptor_cols ||
+            static_cast<std::size_t>(rows) != keypoint_count) {
+            throw std::runtime_error{"invalid SIGFM descriptor metadata"};
+        }
+
+        const auto descriptor_bytes = keypoint_count * sift_descriptor_cols * sizeof(float);
+        if (descriptor_bytes > in.size()) {
+            throw std::runtime_error{"invalid SIGFM descriptor data"};
+        }
+
+        info.descriptors.create(rows, cols, type);
+        in.read(info.descriptors.data, descriptor_bytes);
         return info;
     }
 };
@@ -109,10 +145,17 @@ unsigned char* sigfm_serialize_binary(SigfmImgInfo* info, int* outlen)
 
 SigfmImgInfo* sigfm_deserialize_binary(const unsigned char* bytes, int len)
 {
+    if (bytes == nullptr || len <= 0) {
+        return nullptr;
+    }
+
     try {
         bin::stream s{bytes, bytes + len};
         auto info = std::make_unique<SigfmImgInfo>();
         s >> *info;
+        if (s.size() != 0) {
+            return nullptr;
+        }
         return info.release();
     }
     catch (const std::exception&) {
@@ -150,8 +193,10 @@ int sigfm_match_score(SigfmImgInfo* frame, SigfmImgInfo* enrolled)
 {
     try {
         std::vector<std::vector<cv::DMatch>> points;
+        std::vector<std::vector<cv::DMatch>> backward;
         auto bfm = cv::BFMatcher::create();
         bfm->knnMatch(frame->descriptors, enrolled->descriptors, points, 2);
+        bfm->knnMatch(enrolled->descriptors, frame->descriptors, backward, 1);
         std::set<match> matches_unique;
         int nb_matched = 0;
         for (const auto& pts : points) {
@@ -160,6 +205,12 @@ int sigfm_match_score(SigfmImgInfo* frame, SigfmImgInfo* enrolled)
             }
             const cv::DMatch& match_1 = pts.at(0);
             if (match_1.distance < distance_match * pts.at(1).distance) {
+                if (static_cast<std::size_t>(match_1.trainIdx) >= backward.size() ||
+                    backward[match_1.trainIdx].empty() ||
+                    backward[match_1.trainIdx][0].trainIdx != match_1.queryIdx) {
+                    continue;
+                }
+
                 matches_unique.emplace(
                     match{frame->keypoints.at(match_1.queryIdx).pt,
                           enrolled->keypoints.at(match_1.trainIdx).pt});

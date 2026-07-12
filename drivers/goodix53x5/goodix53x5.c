@@ -36,6 +36,22 @@
 #define GOODIX_PROTO_CMD_BYTE(category, command) \
   (((category) << 4) | ((command) << 1))
 
+/* Driver-owned wrapper for serialized SIGFM features. Bump the version when
+ * preprocessing, extraction, or matching semantics make old templates unsafe
+ * to compare against newly enrolled templates. */
+#define GOODIX_SIGFM_TEMPLATE_MAGIC      "G53S"
+#define GOODIX_SIGFM_TEMPLATE_MAGIC_LEN  4
+#define GOODIX_SIGFM_TEMPLATE_VERSION    1
+#define GOODIX_SIGFM_TEMPLATE_HEADER_LEN \
+  (GOODIX_SIGFM_TEMPLATE_MAGIC_LEN + sizeof (guint16))
+#define GOODIX_SIGFM_TEMPLATE_MAX_LEN    (1024 * 1024)
+
+typedef enum {
+  GOODIX_SIGFM_TEMPLATE_OK,
+  GOODIX_SIGFM_TEMPLATE_INCOMPATIBLE,
+  GOODIX_SIGFM_TEMPLATE_INVALID,
+} GoodixSigfmTemplateStatus;
+
 static gboolean
 goodix_validate_ack_for_cmd (FpDevice        *dev,
                              const GoodixCmd *cmd,
@@ -1115,9 +1131,101 @@ goodix_open_ssm_done (FpiSsm *ssm, FpDevice *dev, GError *error)
 }
 
 /* Forward declarations for SSM handlers used as sub-SSMs */
+static void goodix_ref_capture_ssm_handler (FpiSsm *ssm, FpDevice *dev);
 static void goodix_finger_wait_ssm_handler (FpiSsm *ssm, FpDevice *dev);
 static void goodix_capture_ssm_handler (FpiSsm *ssm, FpDevice *dev);
 static void goodix_finger_up_ssm_handler (FpiSsm *ssm, FpDevice *dev);
+
+/* ========================================================================
+ * TX-off no-finger reference capture SSM
+ * ======================================================================== */
+
+static void
+goodix_ref_capture_ssm_handler (FpiSsm   *ssm,
+                                FpDevice *dev)
+{
+  FpiDeviceGoodix53x5 *self = FPI_DEVICE_GOODIX53X5 (dev);
+
+  switch (fpi_ssm_get_cur_state (ssm))
+    {
+    case GOODIX_REF_CAPTURE_EC_POWER_ON:
+      {
+        guint8 payload[3] = { 0x01, 0x01, 0x00 };
+        goodix_run_cmd (ssm, dev, 0xA, 0x7, payload, sizeof (payload), TRUE);
+      }
+      break;
+
+    case GOODIX_REF_CAPTURE_EC_POWER_ON_DONE:
+      {
+        const guint8 *pl;
+        gsize pl_len;
+
+        if (!goodix_parse_reply_exact (dev, 0xA, 0x7, &pl, &pl_len, NULL) ||
+            pl_len == 0 || pl[0] != 1)
+          {
+            fpi_ssm_mark_failed (ssm,
+                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                           "Reference EC power-on failed"));
+            return;
+          }
+
+        fpi_ssm_next_state (ssm);
+      }
+      break;
+
+    case GOODIX_REF_CAPTURE_GET_IMAGE:
+      {
+        guint8 img_req[4];
+
+        goodix_build_image_request (FALSE, TRUE, FALSE, self->calib.dac_l,
+                                    img_req);
+        goodix_run_cmd (ssm, dev, 0x2, 0x0, img_req, sizeof (img_req), TRUE);
+      }
+      break;
+
+    case GOODIX_REF_CAPTURE_DECODE:
+      {
+        guint8 cat, cmd;
+        const guint8 *pl;
+        gsize pl_len, dec_len;
+        g_autofree guint8 *decrypted = NULL;
+        g_autofree guint16 *img12 = NULL;
+
+        if (!goodix_proto_rx_parse (&self->rx, &cat, &cmd, &pl, &pl_len))
+          {
+            fpi_ssm_mark_failed (ssm,
+                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                           "Failed to parse reference response"));
+            return;
+          }
+
+        decrypted = goodix_crypto_gtls_decrypt_sensor_data (&self->gtls,
+                                                            pl, pl_len,
+                                                            &dec_len);
+        if (decrypted == NULL)
+          {
+            fpi_ssm_mark_failed (ssm,
+                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                           "Reference image decryption failed"));
+            return;
+          }
+
+        img12 = goodix_device_decode_image (decrypted, dec_len);
+        if (img12 == NULL)
+          {
+            fpi_ssm_mark_failed (ssm,
+                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                           "Reference image decode failed"));
+            return;
+          }
+
+        g_clear_pointer (&self->reference_image, g_free);
+        self->reference_image = g_steal_pointer (&img12);
+        fpi_ssm_mark_completed (ssm);
+      }
+      break;
+    }
+}
 
 /* ========================================================================
  * Finger-wait SSM (waiting for finger down)
@@ -1330,14 +1438,34 @@ goodix_capture_ssm_handler (FpiSsm   *ssm,
         /* Decode 12-bit and convert to 8-bit */
         {
           guint16 *img12 = goodix_device_decode_image (decrypted, dec_len);
+          guint8 *img8;
 
-          /* No background subtraction: calibration image uses dac_l/is_finger=FALSE
-           * while finger captures use dac_h/is_finger=TRUE. Subtraction with
-           * mismatched DAC settings destroys fingerprint contrast. */
-          guint8 *img8 = goodix_device_image_to_8bit (img12, NULL);
+          if (img12 == NULL)
+            {
+              g_free (decrypted);
+              fpi_ssm_mark_failed (ssm,
+                                   fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                             "Capture image decode failed"));
+              return;
+            }
+
+          if (self->reference_image == NULL)
+            {
+              g_free (img12);
+              g_free (decrypted);
+              fpi_ssm_mark_failed (ssm,
+                                   fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                             "Missing reference image"));
+              return;
+            }
+
+          img8 = goodix_device_image_to_8bit (img12, self->reference_image);
+          self->captured_clipped_fraction =
+            goodix_device_image_clipped_fraction (img12);
 
           g_free (img12);
           g_free (decrypted);
+          g_clear_pointer (&self->reference_image, g_free);
 
           /* Store native 8-bit image for SIGFM matching */
           g_free (self->captured_image);
@@ -1508,6 +1636,75 @@ goodix_deactivate_ssm_handler (FpiSsm   *ssm,
     }
 }
 
+static GBytes *
+goodix_serialize_sigfm_template (SigfmImgInfo *info)
+{
+  guint8 *feature;
+  guint8 *template;
+  guint16 version;
+  int feature_len;
+
+  feature = sigfm_serialize_binary (info, &feature_len);
+  if (feature == NULL || feature_len <= 0 ||
+      feature_len > GOODIX_SIGFM_TEMPLATE_MAX_LEN - GOODIX_SIGFM_TEMPLATE_HEADER_LEN)
+    {
+      g_free (feature);
+      return NULL;
+    }
+
+  template = g_malloc (GOODIX_SIGFM_TEMPLATE_HEADER_LEN + feature_len);
+  memcpy (template, GOODIX_SIGFM_TEMPLATE_MAGIC,
+          GOODIX_SIGFM_TEMPLATE_MAGIC_LEN);
+  version = GUINT16_TO_LE (GOODIX_SIGFM_TEMPLATE_VERSION);
+  memcpy (template + GOODIX_SIGFM_TEMPLATE_MAGIC_LEN, &version,
+          sizeof (version));
+  memcpy (template + GOODIX_SIGFM_TEMPLATE_HEADER_LEN, feature, feature_len);
+  g_free (feature);
+
+  return g_bytes_new_take (template,
+                           GOODIX_SIGFM_TEMPLATE_HEADER_LEN + feature_len);
+}
+
+static SigfmImgInfo *
+goodix_deserialize_sigfm_template (const guint8 *template,
+                                   gsize         template_len,
+                                   GoodixSigfmTemplateStatus *status)
+{
+  SigfmImgInfo *info;
+  guint16 version;
+  gsize feature_len;
+
+  *status = GOODIX_SIGFM_TEMPLATE_INVALID;
+
+  if (template_len <= GOODIX_SIGFM_TEMPLATE_HEADER_LEN ||
+      template_len > GOODIX_SIGFM_TEMPLATE_MAX_LEN ||
+      memcmp (template, GOODIX_SIGFM_TEMPLATE_MAGIC,
+              GOODIX_SIGFM_TEMPLATE_MAGIC_LEN) != 0)
+    {
+      *status = GOODIX_SIGFM_TEMPLATE_INCOMPATIBLE;
+      return NULL;
+    }
+
+  memcpy (&version, template + GOODIX_SIGFM_TEMPLATE_MAGIC_LEN,
+          sizeof (version));
+  if (GUINT16_FROM_LE (version) != GOODIX_SIGFM_TEMPLATE_VERSION)
+    {
+      *status = GOODIX_SIGFM_TEMPLATE_INCOMPATIBLE;
+      return NULL;
+    }
+
+  feature_len = template_len - GOODIX_SIGFM_TEMPLATE_HEADER_LEN;
+  if (feature_len > G_MAXINT)
+    return NULL;
+
+  info = sigfm_deserialize_binary (template + GOODIX_SIGFM_TEMPLATE_HEADER_LEN,
+                                   (int) feature_len);
+  if (info != NULL)
+    *status = GOODIX_SIGFM_TEMPLATE_OK;
+
+  return info;
+}
+
 /* ========================================================================
  * Enroll SSM
  * ======================================================================== */
@@ -1520,6 +1717,14 @@ goodix_enroll_ssm_handler (FpiSsm   *ssm,
 
   switch (fpi_ssm_get_cur_state (ssm))
     {
+    case GOODIX_ENROLL_CAPTURE_REF:
+      {
+        FpiSsm *sub = fpi_ssm_new (dev, goodix_ref_capture_ssm_handler,
+                                   GOODIX_REF_CAPTURE_NUM_STATES);
+        fpi_ssm_start_subsm (ssm, sub);
+      }
+      break;
+
     case GOODIX_ENROLL_WAIT_FINGER:
       {
         FpiSsm *sub = fpi_ssm_new (dev, goodix_finger_wait_ssm_handler,
@@ -1539,16 +1744,34 @@ goodix_enroll_ssm_handler (FpiSsm   *ssm,
     case GOODIX_ENROLL_PROCESS:
       {
         SigfmImgInfo *info;
+        GBytes *feature;
         int keypoints;
+
+        /* Partial-contact captures make weak templates: the clipped
+         * (non-contact) area holds no ridge data, and historical fluke
+         * matches rode templates enrolled with poor coverage. Ask the user
+         * to re-place the finger instead of storing such a stage. */
+        if (self->captured_clipped_fraction > GOODIX_ENROLL_MAX_CLIPPED_FRACTION)
+          {
+            fp_dbg ("Enrollment stage rejected: %.1f%% of frame has no "
+                    "finger contact (limit %.1f%%)",
+                    self->captured_clipped_fraction * 100.0,
+                    GOODIX_ENROLL_MAX_CLIPPED_FRACTION * 100.0);
+            g_clear_pointer (&self->captured_image, g_free);
+            fpi_device_enroll_progress (dev, self->enroll_stage, NULL,
+                                        fpi_device_retry_new (FP_DEVICE_RETRY_CENTER_FINGER));
+            fpi_ssm_next_state (ssm);
+            return;
+          }
 
         info = sigfm_extract (self->captured_image,
                               GOODIX_SENSOR_WIDTH,
                               GOODIX_SENSOR_HEIGHT);
         keypoints = sigfm_keypoints_count (info);
-        sigfm_free_info (info);
 
         if (keypoints < GOODIX_MIN_CAPTURE_KEYPOINTS)
           {
+            sigfm_free_info (info);
             g_clear_pointer (&self->captured_image, g_free);
             fpi_device_enroll_progress (dev, self->enroll_stage, NULL,
                                         fpi_device_retry_new (FP_DEVICE_RETRY_REMOVE_FINGER));
@@ -1556,9 +1779,19 @@ goodix_enroll_ssm_handler (FpiSsm   *ssm,
             return;
           }
 
-        /* Store captured image in enrollment array */
-        g_ptr_array_add (self->enroll_images, self->captured_image);
-        self->captured_image = NULL;
+        feature = goodix_serialize_sigfm_template (info);
+        sigfm_free_info (info);
+        if (feature == NULL)
+          {
+            g_clear_pointer (&self->captured_image, g_free);
+            fpi_ssm_mark_failed (ssm,
+                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                                           "Failed to serialize SIGFM features"));
+            return;
+          }
+
+        g_ptr_array_add (self->enroll_features, feature);
+        g_clear_pointer (&self->captured_image, g_free);
         self->enroll_stage++;
 
         fp_dbg ("Enrollment stage %d/%d complete",
@@ -1579,7 +1812,7 @@ goodix_enroll_ssm_handler (FpiSsm   *ssm,
 
     case GOODIX_ENROLL_NEXT:
       if (self->enroll_stage < GOODIX_ENROLL_SAMPLES)
-        fpi_ssm_jump_to_state (ssm, GOODIX_ENROLL_WAIT_FINGER);
+        fpi_ssm_jump_to_state (ssm, GOODIX_ENROLL_CAPTURE_REF);
       else
         fpi_ssm_mark_completed (ssm);
       break;
@@ -1596,30 +1829,37 @@ goodix_enroll_ssm_done (FpiSsm *ssm, FpDevice *dev, GError *error)
 
   if (error)
     {
-      g_clear_pointer (&self->enroll_images, g_ptr_array_unref);
+      g_clear_pointer (&self->enroll_features, g_ptr_array_unref);
+      g_clear_pointer (&self->reference_image, g_free);
       g_clear_pointer (&self->captured_image, g_free);
       fpi_device_enroll_complete (dev, NULL, error);
       return;
     }
 
-  /* Build print from enrollment images */
+  /* Build print from serialized enrollment features */
   FpPrint *print = NULL;
 
   fpi_device_get_enroll_data (dev, &print);
   fpi_print_set_type (print, FPI_PRINT_RAW);
 
-  /* Build GVariant "aay" — array of byte arrays, one per enrollment sample */
+  /* Build GVariant "aay" — array of byte arrays, one per enrollment sample.
+   * There is no driver-private format magic/version here; templates enrolled
+   * with the old TX-off p2 preprocessing must be re-enrolled for p3 scoring.
+   */
   GVariantBuilder builder;
 
   g_variant_builder_init (&builder, G_VARIANT_TYPE ("aay"));
 
-  for (guint i = 0; i < self->enroll_images->len; i++)
+  for (guint i = 0; i < self->enroll_features->len; i++)
     {
-      guint8 *img = g_ptr_array_index (self->enroll_images, i);
+      GBytes *feature = g_ptr_array_index (self->enroll_features, i);
+      gsize feature_len;
+      const guint8 *feature_data = g_bytes_get_data (feature, &feature_len);
+
       g_variant_builder_add (&builder, "@ay",
                              g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE,
-                                                        img,
-                                                        GOODIX_SENSOR_PIXELS,
+                                                        feature_data,
+                                                        feature_len,
                                                         1));
     }
 
@@ -1627,7 +1867,7 @@ goodix_enroll_ssm_done (FpiSsm *ssm, FpDevice *dev, GError *error)
 
   g_object_set (G_OBJECT (print), "fpi-data", data, NULL);
 
-  g_clear_pointer (&self->enroll_images, g_ptr_array_unref);
+  g_clear_pointer (&self->enroll_features, g_ptr_array_unref);
 
   fp_info ("Enrollment complete with %d samples", GOODIX_ENROLL_SAMPLES);
 
@@ -1646,6 +1886,16 @@ goodix_clear_pending_result_report (FpiDeviceGoodix53x5 *self)
   self->pending_verify_result = 0;
   g_clear_object (&self->pending_identify_match);
   g_clear_error (&self->pending_result_error);
+  g_clear_error (&self->pending_action_error);
+}
+
+static void
+goodix_queue_action_error (FpiDeviceGoodix53x5 *self,
+                           GError              *error)
+{
+  goodix_clear_pending_result_report (self);
+
+  self->pending_action_error = error;
 }
 
 static void
@@ -1673,6 +1923,27 @@ goodix_queue_identify_report (FpiDeviceGoodix53x5 *self,
   if (match != NULL)
     self->pending_identify_match = g_object_ref (match);
   self->pending_result_error = error;
+}
+
+static GoodixSigfmTemplateStatus
+goodix_match_serialized_feature (SigfmImgInfo  *probe_info,
+                                 const guint8  *feature,
+                                 gsize          feature_len,
+                                 int           *score)
+{
+  SigfmImgInfo *tmpl_info;
+  GoodixSigfmTemplateStatus status;
+
+  tmpl_info = goodix_deserialize_sigfm_template (feature, feature_len, &status);
+  if (tmpl_info == NULL)
+    return status;
+
+  *score = sigfm_match_score (probe_info, tmpl_info);
+  sigfm_free_info (tmpl_info);
+  if (*score < 0)
+    return GOODIX_SIGFM_TEMPLATE_INVALID;
+
+  return GOODIX_SIGFM_TEMPLATE_OK;
 }
 
 static void
@@ -1711,6 +1982,14 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
 
   switch (fpi_ssm_get_cur_state (ssm))
     {
+    case GOODIX_VERIFY_CAPTURE_REF:
+      {
+        FpiSsm *sub = fpi_ssm_new (dev, goodix_ref_capture_ssm_handler,
+                                   GOODIX_REF_CAPTURE_NUM_STATES);
+        fpi_ssm_start_subsm (ssm, sub);
+      }
+      break;
+
     case GOODIX_VERIFY_WAIT_FINGER:
       {
         FpiSsm *sub = fpi_ssm_new (dev, goodix_finger_wait_ssm_handler,
@@ -1765,6 +2044,9 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
             GPtrArray *gallery = NULL;
             FpPrint *match = NULL;
             int best_score = 0;
+            int best_match_score = 0;
+            int valid_templates = 0;
+            gboolean saw_unusable_template = FALSE;
 
             fpi_device_get_identify_data (dev, &gallery);
 
@@ -1786,20 +2068,32 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
                 while ((child = g_variant_iter_next_value (&iter)))
                   {
                     gsize len;
-                    const guint8 *img;
+                    const guint8 *feature;
 
-                    img = g_variant_get_fixed_array (child, &len, 1);
-                    if (len == GOODIX_SENSOR_PIXELS)
+                    feature = g_variant_get_fixed_array (child, &len, 1);
+                    if (len > 0)
                       {
-                        SigfmImgInfo *tmpl_info;
+                        int score;
+                        GoodixSigfmTemplateStatus template_status;
 
-                        tmpl_info = sigfm_extract (img,
-                                                    GOODIX_SENSOR_WIDTH,
-                                                    GOODIX_SENSOR_HEIGHT);
-                        int score = sigfm_match_score (probe_info, tmpl_info);
+                        template_status = goodix_match_serialized_feature (probe_info,
+                                                                           feature,
+                                                                           len,
+                                                                           &score);
+                        if (template_status != GOODIX_SIGFM_TEMPLATE_OK)
+                          {
+                            saw_unusable_template = TRUE;
+
+                            fp_dbg ("identify: gallery[%u] sample %d invalid SIGFM template",
+                                    i, sample_idx);
+                            sample_idx++;
+                            g_variant_unref (child);
+                            continue;
+                          }
+
+                        valid_templates++;
                         fp_dbg ("identify: gallery[%u] sample %d sigfm_score %d",
                                 i, sample_idx, score);
-                        sigfm_free_info (tmpl_info);
 
                         if (score > tmpl_best_score)
                           tmpl_best_score = score;
@@ -1810,10 +2104,13 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
                   }
                 g_variant_unref (tmpl_data);
 
+                if (tmpl_best_score > best_score)
+                  best_score = tmpl_best_score;
+
                 if (tmpl_best_score >= GOODIX_SIGFM_BEST_MIN &&
-                    tmpl_best_score > best_score)
+                    tmpl_best_score > best_match_score)
                   {
-                    best_score = tmpl_best_score;
+                    best_match_score = tmpl_best_score;
                     match = tmpl;
                   }
               }
@@ -1821,7 +2118,13 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
             fp_dbg ("Identify best SIGFM score: %d (best_min: %d)",
                     best_score, GOODIX_SIGFM_BEST_MIN);
 
-            if (match != NULL)
+            if (valid_templates == 0 && saw_unusable_template)
+              {
+                goodix_queue_action_error (self,
+                                           fpi_device_error_new (FP_DEVICE_ERROR_DATA_INVALID));
+                self->verify_wait_finger_up = FALSE;
+              }
+            else if (match != NULL)
               {
                 goodix_queue_identify_report (self, match, NULL);
                 self->verify_wait_finger_up = FALSE;
@@ -1839,6 +2142,8 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
             GVariant *data = NULL;
             int best_score = 0;
             int sample_idx = 0;
+            int valid_templates = 0;
+            gboolean saw_unusable_template = FALSE;
 
             fpi_device_get_verify_data (dev, &print);
             g_object_get (G_OBJECT (print), "fpi-data", &data, NULL);
@@ -1852,20 +2157,32 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
                 while ((child = g_variant_iter_next_value (&iter)))
                   {
                     gsize len;
-                    const guint8 *img;
+                    const guint8 *feature;
 
-                    img = g_variant_get_fixed_array (child, &len, 1);
-                    if (len == GOODIX_SENSOR_PIXELS)
+                    feature = g_variant_get_fixed_array (child, &len, 1);
+                    if (len > 0)
                       {
-                        SigfmImgInfo *tmpl_info;
+                        int score;
+                        GoodixSigfmTemplateStatus template_status;
 
-                        tmpl_info = sigfm_extract (img,
-                                                    GOODIX_SENSOR_WIDTH,
-                                                    GOODIX_SENSOR_HEIGHT);
-                        int score = sigfm_match_score (probe_info, tmpl_info);
+                        template_status = goodix_match_serialized_feature (probe_info,
+                                                                           feature,
+                                                                           len,
+                                                                           &score);
+                        if (template_status != GOODIX_SIGFM_TEMPLATE_OK)
+                          {
+                            saw_unusable_template = TRUE;
+
+                            fp_dbg ("verify: sample %d invalid SIGFM template",
+                                    sample_idx);
+                            sample_idx++;
+                            g_variant_unref (child);
+                            continue;
+                          }
+
+                        valid_templates++;
                         fp_dbg ("verify: sample %d sigfm_score %d",
                                 sample_idx, score);
-                        sigfm_free_info (tmpl_info);
 
                         if (score > best_score)
                           best_score = score;
@@ -1880,7 +2197,13 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
             fp_dbg ("Verify best SIGFM score: %d (best_min: %d)",
                     best_score, GOODIX_SIGFM_BEST_MIN);
 
-            if (best_score >= GOODIX_SIGFM_BEST_MIN)
+            if (valid_templates == 0 && saw_unusable_template)
+              {
+                goodix_queue_action_error (self,
+                                           fpi_device_error_new (FP_DEVICE_ERROR_DATA_INVALID));
+                self->verify_wait_finger_up = FALSE;
+              }
+            else if (best_score >= GOODIX_SIGFM_BEST_MIN)
               {
                 goodix_queue_verify_report (self, FPI_MATCH_SUCCESS, NULL);
                 self->verify_wait_finger_up = FALSE;
@@ -1927,6 +2250,7 @@ goodix_verify_ssm_done (FpiSsm *ssm, FpDevice *dev, GError *error)
 
   self->task_ssm = NULL;
   self->blocking_ssm = NULL;
+  g_clear_pointer (&self->reference_image, g_free);
   g_clear_pointer (&self->captured_image, g_free);
 
   if (error)
@@ -1945,7 +2269,12 @@ goodix_verify_ssm_done (FpiSsm *ssm, FpDevice *dev, GError *error)
     }
 
   if (error == NULL)
-    goodix_flush_pending_result_report (dev);
+    {
+      if (self->pending_action_error != NULL)
+        error = g_steal_pointer (&self->pending_action_error);
+      else
+        goodix_flush_pending_result_report (dev);
+    }
   else
     goodix_clear_pending_result_report (self);
 
@@ -1994,8 +2323,9 @@ goodix_close (FpDevice *dev)
   g_clear_pointer (&self->otp_data, g_free);
   g_clear_pointer (&self->fw_version, g_free);
   g_clear_pointer (&self->rx.buf, g_free);
+  g_clear_pointer (&self->reference_image, g_free);
   g_clear_pointer (&self->captured_image, g_free);
-  g_clear_pointer (&self->enroll_images, g_ptr_array_unref);
+  g_clear_pointer (&self->enroll_features, g_ptr_array_unref);
 
   if (self->cmd)
     {
@@ -2023,8 +2353,10 @@ goodix_enroll (FpDevice *dev)
   self->cancel = g_cancellable_new ();
 
   self->enroll_stage = 0;
-  g_clear_pointer (&self->enroll_images, g_ptr_array_unref);
-  self->enroll_images = g_ptr_array_new_with_free_func (g_free);
+  g_clear_pointer (&self->reference_image, g_free);
+  g_clear_pointer (&self->captured_image, g_free);
+  g_clear_pointer (&self->enroll_features, g_ptr_array_unref);
+  self->enroll_features = g_ptr_array_new_with_free_func ((GDestroyNotify) g_bytes_unref);
 
   ssm = fpi_ssm_new (dev, goodix_enroll_ssm_handler,
                       GOODIX_ENROLL_NUM_STATES);
@@ -2043,6 +2375,8 @@ goodix_verify (FpDevice *dev)
   goodix_clear_pending_result_report (self);
   self->action_result_reported = FALSE;
   self->verify_wait_finger_up = FALSE;
+  g_clear_pointer (&self->reference_image, g_free);
+  g_clear_pointer (&self->captured_image, g_free);
 
   ssm = fpi_ssm_new (dev, goodix_verify_ssm_handler,
                       GOODIX_VERIFY_NUM_STATES);
@@ -2061,6 +2395,8 @@ goodix_identify (FpDevice *dev)
   goodix_clear_pending_result_report (self);
   self->action_result_reported = FALSE;
   self->verify_wait_finger_up = FALSE;
+  g_clear_pointer (&self->reference_image, g_free);
+  g_clear_pointer (&self->captured_image, g_free);
 
   ssm = fpi_ssm_new (dev, goodix_verify_ssm_handler,
                       GOODIX_VERIFY_NUM_STATES);
