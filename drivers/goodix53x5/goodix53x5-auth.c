@@ -29,6 +29,35 @@
 
 #include <string.h>
 
+static gboolean
+goodix_match_scores_need_exhaustive_logging (void)
+{
+  return !g_log_writer_default_would_drop (G_LOG_LEVEL_DEBUG, G_LOG_DOMAIN);
+}
+
+static gboolean
+goodix_gallery_has_single_username (GPtrArray *gallery)
+{
+  const gchar *username;
+
+  if (gallery->len == 0)
+    return FALSE;
+
+  username = fp_print_get_username (g_ptr_array_index (gallery, 0));
+  if (username == NULL || username[0] == '\0')
+    return FALSE;
+
+  for (guint i = 1; i < gallery->len; i++)
+    {
+      FpPrint *print = g_ptr_array_index (gallery, i);
+
+      if (g_strcmp0 (username, fp_print_get_username (print)) != 0)
+        return FALSE;
+    }
+
+  return TRUE;
+}
+
 /* Verify/Identify SSM */
 typedef enum {
   GOODIX_VERIFY_REINIT = 0,
@@ -189,8 +218,12 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
             int best_match_score = 0;
             int valid_templates = 0;
             gboolean saw_unusable_template = FALSE;
+            gboolean stop_after_match;
 
             fpi_device_get_identify_data (dev, &gallery);
+            stop_after_match =
+              !goodix_match_scores_need_exhaustive_logging () &&
+              goodix_gallery_has_single_username (gallery);
 
             for (guint i = 0; i < gallery->len; i++)
               {
@@ -241,6 +274,13 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
                           tmpl_best_score = score;
 
                         sample_idx++;
+
+                        if (stop_after_match &&
+                            tmpl_best_score >= GOODIX_SIGFM_BEST_MIN)
+                          {
+                            g_variant_unref (child);
+                            break;
+                          }
                       }
                     g_variant_unref (child);
                   }
@@ -255,6 +295,9 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
                     best_match_score = tmpl_best_score;
                     match = tmpl;
                   }
+
+                if (stop_after_match && match != NULL)
+                  break;
               }
 
             fp_dbg ("Identify best SIGFM score: %d (best_min: %d)",
@@ -286,6 +329,8 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
             int sample_idx = 0;
             int valid_templates = 0;
             gboolean saw_unusable_template = FALSE;
+            gboolean score_all_templates =
+              goodix_match_scores_need_exhaustive_logging ();
 
             fpi_device_get_verify_data (dev, &print);
             g_object_get (G_OBJECT (print), "fpi-data", &data, NULL);
@@ -330,6 +375,15 @@ goodix_verify_ssm_handler (FpiSsm   *ssm,
                           best_score = score;
 
                         sample_idx++;
+
+                        /* Verify targets one known print, so later samples
+                         * cannot change the result after the gate is met. */
+                        if (!score_all_templates &&
+                            best_score >= GOODIX_SIGFM_BEST_MIN)
+                          {
+                            g_variant_unref (child);
+                            break;
+                          }
                       }
                     g_variant_unref (child);
                   }
