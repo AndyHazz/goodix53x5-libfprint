@@ -95,8 +95,9 @@ Manual Meson cleanup required:
 
 1. In $LIBFPRINT_DIR/libfprint/meson.build:
    - Remove the 'goodix53x5' entry from the driver_sources dictionary.
-   - Remove the SIGFM/OpenCV block that defines opencv_inc, opencv_core,
-     opencv_features2d, opencv_flann, opencv_imgproc, opencv_dep, and libsigfm.
+   - Remove the SIGFM/OpenCV block that defines opencv_pc, opencv_includes,
+     opencv_core, opencv_features2d, opencv_flann, opencv_imgproc, opencv_dep,
+     and libsigfm.
    - Remove libsigfm from any link_with lists.
    - Remove opencv_dep from any dependencies lists if it was only added for this driver.
 

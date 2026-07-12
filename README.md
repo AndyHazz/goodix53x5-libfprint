@@ -33,7 +33,7 @@ The current preprocessing pipeline is shown below:
 ## Dependencies
 
 - **libfprint** source tree (tested with v1.94.10)
-- **OpenCV 4** (`opencv_core`, `opencv_features2d`, `opencv_flann`, `opencv_imgproc`)
+- **OpenCV 4 or 5** (`opencv_core`, `opencv_features2d`/`opencv_features`, `opencv_flann`, `opencv_imgproc`)
 - **OpenSSL 3.0+**
 - Standard libfprint build dependencies: Meson, Ninja, pkg-config, GLib, and libgusb
 
@@ -150,14 +150,21 @@ Preview the removals without deleting files:
      ```
    - Add SIGFM static library build (before `libfprint_drivers`):
      ```meson
-     opencv_inc = include_directories('/usr/include/opencv4')
+     opencv_pc = dependency('opencv5', required: false)
+     if not opencv_pc.found()
+         opencv_pc = dependency('opencv4')
+     endif
+     opencv_includes = opencv_pc.partial_dependency(compile_args: true, includes: true)
      opencv_core = cc.find_library('opencv_core')
-     opencv_features2d = cc.find_library('opencv_features2d')
+     # OpenCV 5 renamed the features2d module to features
+     opencv_features2d = cc.find_library('opencv_features2d', required: false)
+     if not opencv_features2d.found()
+         opencv_features2d = cc.find_library('opencv_features')
+     endif
      opencv_flann = cc.find_library('opencv_flann')
      opencv_imgproc = cc.find_library('opencv_imgproc')
      opencv_dep = declare_dependency(
-         include_directories: opencv_inc,
-         dependencies: [opencv_core, opencv_features2d, opencv_flann, opencv_imgproc],
+         dependencies: [opencv_includes, opencv_core, opencv_features2d, opencv_flann, opencv_imgproc],
      )
      libsigfm = static_library('sigfm',
          'sigfm/sigfm.cpp',

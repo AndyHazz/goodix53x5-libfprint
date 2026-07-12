@@ -11,21 +11,29 @@ index ae0f6e2..500d04e 100644
      'fpcmoc' :
          [ 'drivers/fpcmoc/fpc.c' ],
      'realtek' :
-@@ -259,6 +261,24 @@ libnbis = static_library('nbis',
+@@ -259,6 +261,32 @@ libnbis = static_library('nbis',
      ]),
      install: false)
  
 +# SIGFM: SIFT-based fingerprint matching for small sensors
-+# Link only the OpenCV modules we need (the full opencv4 pkg-config pulls
-+# modules like viz/hdf that have missing transitive deps).
-+opencv_inc = include_directories('/usr/include/opencv4')
++# Use pkg-config only for the include path; link only the OpenCV modules we
++# need (the full opencv pkg-config pulls modules like viz/hdf that have
++# missing transitive deps).
++opencv_pc = dependency('opencv5', required: false)
++if not opencv_pc.found()
++    opencv_pc = dependency('opencv4')
++endif
++opencv_includes = opencv_pc.partial_dependency(compile_args: true, includes: true)
 +opencv_core = cc.find_library('opencv_core')
-+opencv_features2d = cc.find_library('opencv_features2d')
++# OpenCV 5 renamed the features2d module to features
++opencv_features2d = cc.find_library('opencv_features2d', required: false)
++if not opencv_features2d.found()
++    opencv_features2d = cc.find_library('opencv_features')
++endif
 +opencv_flann = cc.find_library('opencv_flann')
 +opencv_imgproc = cc.find_library('opencv_imgproc')
 +opencv_dep = declare_dependency(
-+    include_directories: opencv_inc,
-+    dependencies: [opencv_core, opencv_features2d, opencv_flann, opencv_imgproc],
++    dependencies: [opencv_includes, opencv_core, opencv_features2d, opencv_flann, opencv_imgproc],
 +)
 +libsigfm = static_library('sigfm',
 +    'sigfm/sigfm.cpp',
@@ -36,7 +44,7 @@ index ae0f6e2..500d04e 100644
  libfprint_private = static_library('fprint-private',
      sources: [
          fpi_enums,
-@@ -272,7 +292,7 @@ libfprint_drivers = static_library('fprint-drivers',
+@@ -272,7 +300,7 @@ libfprint_drivers = static_library('fprint-drivers',
      sources: drivers_sources,
      c_args: drivers_cflags,
      dependencies: deps,
@@ -45,7 +53,7 @@ index ae0f6e2..500d04e 100644
      install: false)
  
  mapfile = files('libfprint.ver')[0]
-@@ -292,8 +312,8 @@ libfprint = shared_library(versioned_libname.split('lib')[1],
+@@ -292,8 +320,8 @@ libfprint = shared_library(versioned_libname.split('lib')[1],
      version: libversion,
      link_args : vflag,
      link_depends : mapfile,
