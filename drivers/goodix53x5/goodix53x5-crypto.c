@@ -20,7 +20,7 @@
 #define FP_COMPONENT "goodix53x5"
 
 #include "drivers_api.h"
-#include "goodix53x5.h"
+#include "goodix53x5-crypto.h"
 
 #include <string.h>
 #include <openssl/evp.h>

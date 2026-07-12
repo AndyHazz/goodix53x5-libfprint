@@ -131,7 +131,7 @@ Preview the removals without deleting files:
    - Add to the `driver_sources` dictionary:
      ```meson
      'goodix53x5' :
-         [ 'drivers/goodix53x5/goodix53x5.c', 'drivers/goodix53x5/goodix53x5-proto.c', 'drivers/goodix53x5/goodix53x5-crypto.c', 'drivers/goodix53x5/goodix53x5-device.c' ],
+         [ 'drivers/goodix53x5/goodix53x5.c', 'drivers/goodix53x5/goodix53x5-proto.c', 'drivers/goodix53x5/goodix53x5-crypto.c', 'drivers/goodix53x5/goodix53x5-transport.c', 'drivers/goodix53x5/goodix53x5-commands.c', 'drivers/goodix53x5/goodix53x5-session.c', 'drivers/goodix53x5/goodix53x5-scan.c', 'drivers/goodix53x5/goodix53x5-enroll.c', 'drivers/goodix53x5/goodix53x5-auth.c', 'drivers/goodix53x5/goodix53x5-match.c', 'drivers/goodix53x5/goodix53x5-calibration.c', 'drivers/goodix53x5/goodix53x5-image.c' ],
      ```
    - Add SIGFM static library build (before `libfprint_drivers`):
      ```meson
@@ -221,11 +221,20 @@ The accept gate is `GOODIX_SIGFM_BEST_MIN` in `goodix53x5.h` (default `150`). Ra
 
 ```
 drivers/goodix53x5/
-  goodix53x5.h           - Header: defines, structs, function declarations
-  goodix53x5.c           - Main driver: SSMs for open, enroll, verify, identify
-  goodix53x5-device.c    - Device helpers: OTP, config, FDT, image processing
-  goodix53x5-proto.c     - USB protocol: message building, reassembly, parsing
-  goodix53x5-crypto.c    - Crypto: GTLS, AES, HMAC, PSK, GEA decryption
+  goodix53x5.h              - Public driver type declaration
+  goodix53x5.c              - libfprint entry points: ID table, class init, vfuncs
+  goodix53x5-private.h      - Private device state and shared driver constants
+  goodix53x5-transport.c/.h - USB I/O, chunked send/receive, command sub-SSM
+  goodix53x5-commands.c/.h  - Named device commands and reply parsers
+  goodix53x5-session.c/.h   - Open/initialization SSM, reinit after sleep, suspend/resume
+  goodix53x5-scan.c/.h      - FDT finger detection and image capture SSMs
+  goodix53x5-enroll.c/.h    - Enrollment SSM and template assembly
+  goodix53x5-auth.c/.h      - Verify/identify SSM and result reporting
+  goodix53x5-match.c/.h     - SIGFM template format, serialization, scoring
+  goodix53x5-calibration.c/.h - OTP parsing, config patching, FDT base math
+  goodix53x5-image.c/.h     - Raw12 decode, TX-off subtraction, normalization
+  goodix53x5-proto.c/.h     - Wire protocol: message building, reassembly, parsing
+  goodix53x5-crypto.c/.h    - Crypto: GTLS, AES, HMAC, CRC, GEA decryption
 
 sigfm/
   sigfm.hpp              - SIGFM C API header
