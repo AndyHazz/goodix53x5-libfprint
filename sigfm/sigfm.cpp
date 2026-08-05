@@ -134,7 +134,17 @@ struct angle {
 
 SigfmImgInfo* sigfm_copy_info(SigfmImgInfo* info) { return new SigfmImgInfo{*info}; }
 
-int sigfm_keypoints_count(SigfmImgInfo* info) { return info->keypoints.size(); }
+int sigfm_keypoints_count(SigfmImgInfo* info)
+{
+    /* sigfm_extract() reports failure with nullptr and the C callers in
+     * goodix53x5-match.c hand the result straight to this function before any
+     * null check, so treat it as "no keypoints" rather than dereferencing. */
+    if (info == nullptr) {
+        return 0;
+    }
+    return info->keypoints.size();
+}
+
 unsigned char* sigfm_serialize_binary(SigfmImgInfo* info, int* outlen)
 {
     bin::stream s;
@@ -165,28 +175,46 @@ SigfmImgInfo* sigfm_deserialize_binary(const unsigned char* bytes, int len)
 
 SigfmImgInfo* sigfm_extract(const SigfmPix* pix, int width, int height)
 {
-    cv::Mat img;
-    img.create(height, width, CV_8UC1);
-    std::memcpy(img.data, pix, width * height);
+    /* cv::Mat::create() accepts non-positive dimensions without complaint and
+     * leaves the Mat in a state where the memcpy below corrupts the heap; the
+     * throw only surfaces later, inside CLAHE. Reject the dimensions up front
+     * rather than relying on OpenCV to catch them. */
+    if (pix == nullptr || width <= 0 || height <= 0) {
+        return nullptr;
+    }
 
-    /* Apply CLAHE to enhance local contrast for better SIFT detection */
-    auto clahe = cv::createCLAHE(4.0, cv::Size(4, 4));
-    cv::Mat enhanced;
-    clahe->apply(img, enhanced);
+    /* This function is called across the C ABI from the driver's C state-machine
+     * handlers (via goodix_match_extract()). An OpenCV cv::Exception or a
+     * std::bad_alloc unwinding through a C stack frame is undefined behaviour
+     * and reaches std::terminate(), killing the root fprintd process. Report
+     * failure with nullptr instead, matching sigfm_match_score() below. */
+    try {
+        cv::Mat img;
+        img.create(height, width, CV_8UC1);
+        std::memcpy(img.data, pix, (std::size_t) width * (std::size_t) height);
 
-    const auto roi = cv::Mat::ones(cv::Size{enhanced.size[1], enhanced.size[0]}, CV_8UC1);
-    std::vector<cv::KeyPoint> pts;
+        /* Apply CLAHE to enhance local contrast for better SIFT detection */
+        auto clahe = cv::createCLAHE(4.0, cv::Size(4, 4));
+        cv::Mat enhanced;
+        clahe->apply(img, enhanced);
 
-    cv::Mat descs;
-    cv::SIFT::create(sift_nfeatures,
-                     sift_octave_layers,
-                     sift_contrast_threshold,
-                     sift_edge_threshold,
-                     sift_sigma)
-        ->detectAndCompute(enhanced, roi, pts, descs);
+        const auto roi = cv::Mat::ones(cv::Size{enhanced.size[1], enhanced.size[0]}, CV_8UC1);
+        std::vector<cv::KeyPoint> pts;
 
-    auto* info = new SigfmImgInfo{pts, descs};
-    return info;
+        cv::Mat descs;
+        cv::SIFT::create(sift_nfeatures,
+                         sift_octave_layers,
+                         sift_contrast_threshold,
+                         sift_edge_threshold,
+                         sift_sigma)
+            ->detectAndCompute(enhanced, roi, pts, descs);
+
+        auto* info = new SigfmImgInfo{pts, descs};
+        return info;
+    }
+    catch (...) {
+        return nullptr;
+    }
 }
 
 int sigfm_match_score(SigfmImgInfo* frame, SigfmImgInfo* enrolled)
