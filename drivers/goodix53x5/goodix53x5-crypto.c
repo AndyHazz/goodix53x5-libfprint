@@ -267,12 +267,22 @@ goodix_crypto_gea_decrypt (const guint8 *key4,
              key >> 1) &
             0xFFFFFFFF;
 
-      input_element = (guint16) in[i] | ((guint16) in[i + 1] << 8);
+      /* in_len is device-controlled and the loop steps two bytes at a time, so
+       * an odd length leaves a lone trailing byte. Touching in[i + 1] /
+       * out[i + 1] then runs past both buffers - the caller allocates out at
+       * exactly in_len. Decrypt the low byte only. */
+      gboolean have_high_byte = (i + 1 < in_len);
+
+      input_element = (guint16) in[i];
+      if (have_high_byte)
+        input_element |= (guint16) in[i + 1] << 8;
+
       stream_val = (guint16) (((uVar2 >> 8) & 0xFFFF) +
                               ((uVar2 & 0xFF) | (uVar1 & 1)) * 0x100);
       guint16 decrypted = input_element ^ stream_val;
       out[i] = decrypted & 0xFF;
-      out[i + 1] = (decrypted >> 8) & 0xFF;
+      if (have_high_byte)
+        out[i + 1] = (decrypted >> 8) & 0xFF;
     }
 }
 
@@ -502,6 +512,19 @@ goodix_crypto_gtls_decrypt_sensor_data (GoodixGtlsCtx *ctx,
       return NULL;
     }
   fp_dbg ("GEA data CRC verified");
+
+  /* GEA is a 16-bit-word stream cipher and a genuine frame is always an even
+   * number of bytes (GOODIX_SENSOR_RAW12_BYTES). This length is derived from
+   * the device reply and is not covered by the integrity checks above - the
+   * all-zero PSK means a spoofed sensor derives the same keys and can forge a
+   * valid HMAC and CRC over a payload of its choosing. Reject an odd length
+   * outright rather than decrypting a half word. */
+  if (gea_data_len % 2 != 0)
+    {
+      fp_warn ("GEA data length is odd: %zu", gea_data_len);
+      g_free (gea_encrypted);
+      return NULL;
+    }
 
   /* GEA decrypt */
   decrypted = g_malloc (gea_data_len);
