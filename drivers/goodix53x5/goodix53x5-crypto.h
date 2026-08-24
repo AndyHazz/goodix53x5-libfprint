@@ -74,7 +74,7 @@ guint32  goodix_crypto_crc32_mpeg2 (const guint8 *data,
 
 guint32  goodix_crypto_decode_u32 (const guint8 *data);
 
-void     goodix_crypto_aes_cbc_decrypt (const guint8 *key,
+gboolean goodix_crypto_aes_cbc_decrypt (const guint8 *key,
                                         const guint8 *iv,
                                         const guint8 *in,
                                         gsize         in_len,
