@@ -40,6 +40,11 @@ gcc -std=gnu99 -Wall -o "$out_dir/test_goodix53x5_crypto" \
   -Itests/shim -Idrivers/goodix53x5 $glib_flags -lcrypto
 run_test "goodix53x5 crypto" "$out_dir/test_goodix53x5_crypto"
 
+gcc -std=gnu99 -Wall -o "$out_dir/test_goodix53x5_proto" \
+  tests/test_goodix53x5_proto.c drivers/goodix53x5/goodix53x5-proto.c \
+  -Itests/shim -Idrivers/goodix53x5 $glib_flags
+run_test "goodix53x5 proto" "$out_dir/test_goodix53x5_proto"
+
 g++ -std=c++17 -o "$out_dir/test_sigfm_extract" \
   tests/test_sigfm_extract.cpp sigfm/sigfm.cpp \
   $opencv_cflags "${opencv_libs[@]}"

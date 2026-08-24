@@ -150,23 +150,53 @@ goodix_crypto_hmac_sha256 (const guint8 *key,
  * goodix_crypto_aes_cbc_decrypt:
  *
  * AES-128-CBC decryption using OpenSSL EVP.
- * No padding (input must be a multiple of 16 bytes).
+ * No padding (input must be a non-zero multiple of 16 bytes).
+ * Returns TRUE on success. On failure the contents of @out are zeroed and
+ * FALSE is returned; callers must treat the frame as corrupt.
  */
-void
+gboolean
 goodix_crypto_aes_cbc_decrypt (const guint8 *key,
                                const guint8 *iv,
                                const guint8 *in,
                                gsize         in_len,
                                guint8       *out)
 {
-  EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new ();
+  EVP_CIPHER_CTX *ctx;
   int out_len = 0, final_len = 0;
 
-  EVP_DecryptInit_ex (ctx, EVP_aes_128_cbc (), NULL, key, iv);
-  EVP_CIPHER_CTX_set_padding (ctx, 0);
-  EVP_DecryptUpdate (ctx, out, &out_len, in, (int) in_len);
-  EVP_DecryptFinal_ex (ctx, out + out_len, &final_len);
+  /* A zero-length block is a legitimate no-op: the alternating frame layout
+   * can leave no bytes for an AES block when the frame is small. Otherwise
+   * the caller sizes @out for exactly in_len bytes, so refuse lengths the
+   * cipher cannot consume completely rather than silently leaving part of
+   * the output buffer untouched. */
+  if (in_len % 16 != 0)
+    {
+      fp_warn ("AES-CBC input length must be a multiple of 16: %zu",
+               in_len);
+      return FALSE;
+    }
+
+  ctx = EVP_CIPHER_CTX_new ();
+  if (ctx == NULL)
+    {
+      fp_warn ("EVP_CIPHER_CTX_new failed");
+      return FALSE;
+    }
+
+  if (EVP_DecryptInit_ex (ctx, EVP_aes_128_cbc (), NULL, key, iv) != 1 ||
+      EVP_CIPHER_CTX_set_padding (ctx, 0) != 1 ||
+      EVP_DecryptUpdate (ctx, out, &out_len, in, (int) in_len) != 1 ||
+      out_len != (int) in_len ||
+      EVP_DecryptFinal_ex (ctx, out + out_len, &final_len) != 1)
+    {
+      fp_warn ("AES-CBC decryption failed");
+      EVP_CIPHER_CTX_free (ctx);
+      memset (out, 0, in_len);
+      return FALSE;
+    }
+
   EVP_CIPHER_CTX_free (ctx);
+  return TRUE;
 }
 
 /**
@@ -447,10 +477,15 @@ goodix_crypto_gtls_decrypt_sensor_data (GoodixGtlsCtx *ctx,
           /* AES-CBC decrypt block */
           block_size = MIN (0x3F0, ep_remaining);
 
-          goodix_crypto_aes_cbc_decrypt (ctx->symmetric_key,
-                                         ctx->symmetric_iv,
-                                         ep, block_size,
-                                         gea_encrypted + gea_len);
+          if (!goodix_crypto_aes_cbc_decrypt (ctx->symmetric_key,
+                                              ctx->symmetric_iv,
+                                              ep, block_size,
+                                              gea_encrypted + gea_len))
+            {
+              g_free (gea_encrypted);
+              return NULL;
+            }
+
           gea_len += block_size;
           ep += block_size;
           ep_remaining -= block_size;

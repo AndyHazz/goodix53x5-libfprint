@@ -32,6 +32,11 @@
 /* USB chunk size */
 #define GOODIX_USB_CHUNK_SIZE 64
 
+/* Bound on consecutive zero-length bulk-IN reads before the receive fails.
+ * Real devices emit at most an occasional ZLP; a sustained stream means the
+ * sensor is wedged. */
+#define GOODIX_RX_MAX_ZLP 32
+
 #define GOODIX_PROTO_CATEGORY_ACK     0x0B
 #define GOODIX_PROTO_CMD_ACK          0x00
 #define GOODIX_PROTO_ACK_FLAG_VALID   0x01
@@ -204,6 +209,7 @@ goodix_recv_start (FpiSsm       *ssm,
   goodix_proto_rx_reset (&self->rx);
   self->rx_timeout = timeout_ms;
   self->rx_cancellable = cancellable;
+  self->rx_zlp_count = 0;
 
   transfer = fpi_usb_transfer_new (dev);
   transfer->ssm = ssm;
@@ -288,9 +294,21 @@ goodix_rx_cb (FpiUsbTransfer *transfer,
       return;
     }
 
-  /* Skip zero-length reads — resubmit with same timeout/cancellable */
+  /* Skip zero-length reads — resubmit with same timeout/cancellable, but
+   * bound the loop: a malfunctioning sensor streaming continuous ZLPs would
+   * otherwise pin the SSM until the operation is cancelled. */
   if (transfer->actual_length == 0)
     {
+      self->rx_zlp_count++;
+
+      if (self->rx_zlp_count > GOODIX_RX_MAX_ZLP)
+        {
+          fpi_ssm_mark_failed (transfer->ssm,
+                               fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                         "Too many empty USB reads from sensor"));
+          return;
+        }
+
       next = fpi_usb_transfer_new (dev);
       next->ssm = transfer->ssm;
       fpi_usb_transfer_fill_bulk (next, GOODIX_EP_IN, GOODIX_USB_CHUNK_SIZE);
@@ -298,6 +316,8 @@ goodix_rx_cb (FpiUsbTransfer *transfer,
                                goodix_rx_cb, NULL);
       return;
     }
+
+  self->rx_zlp_count = 0;
 
   if (!goodix_proto_rx_feed_chunk (&self->rx, transfer->buffer,
                                    transfer->actual_length))

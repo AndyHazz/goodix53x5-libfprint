@@ -23,6 +23,7 @@
 #include "goodix53x5-crypto.h"
 
 #include <stdio.h>
+#include <openssl/evp.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
@@ -257,6 +258,68 @@ test_odd_gea_payload_is_rejected (void)
   g_free (frame);
 }
 
+static void
+test_aes_cbc_rejects_bad_length (void)
+{
+  guint8 key[16] = { 0 }, iv[16] = { 0 };
+  guint8 in[20] = { 0 };
+  guint8 out[20];
+  guint8 sentinel = 0xA5;
+
+  /* 20 is not a multiple of 16 — must be refused, output untouched. */
+  memset (out, sentinel, sizeof (out));
+  CHECK (!goodix_crypto_aes_cbc_decrypt (key, iv, in, sizeof (in), out),
+         "non-multiple-of-16 AES input rejected");
+  CHECK (out[0] == sentinel && out[19] == sentinel,
+         "rejected decrypt leaves output buffer untouched");
+}
+
+static void
+test_aes_cbc_roundtrip_and_failure (void)
+{
+  guint8 key[16], iv[16], plain[32];
+  guint8 enc[32], dec[32];
+
+  for (int i = 0; i < 16; i++)
+    {
+      key[i] = (guint8) i;
+      iv[i] = (guint8) (0xF0 - i);
+    }
+  for (int i = 0; i < 32; i++)
+    plain[i] = (guint8) (i * 7 + 1);
+
+  /* Encrypt with OpenSSL directly (pad-less), then check our helper
+   * round-trips it. */
+  {
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new ();
+    int len = 0, flen = 0;
+
+    g_assert (ctx != NULL);
+    g_assert (EVP_EncryptInit_ex (ctx, EVP_aes_128_cbc (), NULL, key, iv) == 1);
+    g_assert (EVP_CIPHER_CTX_set_padding (ctx, 0) == 1);
+    g_assert (EVP_EncryptUpdate (ctx, enc, &len, plain, sizeof (plain)) == 1);
+    g_assert (EVP_EncryptFinal_ex (ctx, enc + len, &flen) == 1);
+    EVP_CIPHER_CTX_free (ctx);
+  }
+
+  CHECK (goodix_crypto_aes_cbc_decrypt (key, iv, enc, sizeof (enc), dec),
+         "valid AES-CBC block decrypts successfully");
+  CHECK (memcmp (dec, plain, sizeof (plain)) == 0,
+         "decrypted output matches plaintext");
+}
+
+static void
+test_aes_cbc_accepts_zero_length (void)
+{
+  guint8 key[16] = { 0 }, iv[16] = { 0 }, out[1] = { 0xEE };
+
+  /* Zero-length blocks occur when a small frame leaves no bytes for an
+   * alternating AES block; must be an accepted no-op. */
+  CHECK (goodix_crypto_aes_cbc_decrypt (key, iv, NULL, 0, out),
+         "zero-length AES input accepted as no-op");
+  CHECK (out[0] == 0xEE, "zero-length decrypt does not touch output");
+}
+
 int
 main (void)
 {
@@ -267,6 +330,9 @@ main (void)
   test_odd_length_does_not_read_past_in ();
   test_even_gea_payload_still_decrypts ();
   test_odd_gea_payload_is_rejected ();
+  test_aes_cbc_rejects_bad_length ();
+  test_aes_cbc_roundtrip_and_failure ();
+  test_aes_cbc_accepts_zero_length ();
 
   if (failures == 0)
     {
