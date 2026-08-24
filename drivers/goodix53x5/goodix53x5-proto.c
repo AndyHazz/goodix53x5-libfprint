@@ -95,9 +95,19 @@ goodix_proto_validate_checksum (const guint8 *data,
 
   msg_checksum = data[len - 1];
 
-  /* 0x88 = no-checksum marker (handshake) */
-  if (msg_checksum == 0x88)
-    return TRUE;
+  /* Handshake traffic (category 0x1) carries a literal 0x88 trailer instead
+   * of a checksum. For every other message class the additive checksum must
+   * match, so a corrupted frame whose last byte happens to be 0x88 is
+   * rejected rather than waved through by the marker. */
+  if ((data[0] & 0xF0) == 0x10)
+    {
+      sum = 0;
+      for (gsize i = 0; i < len - 1; i++)
+        sum += data[i];
+
+      computed = (0xAA - sum) & 0xFF;
+      return computed == msg_checksum || msg_checksum == 0x88;
+    }
 
   sum = 0;
   for (gsize i = 0; i < len - 1; i++)
