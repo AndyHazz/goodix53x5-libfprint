@@ -112,6 +112,9 @@ struct _FpiDeviceGoodix53x5
   GoodixReassembly rx;
   GCancellable    *rx_cancellable; /* Cancellable for current receive */
   guint            rx_timeout;     /* Timeout for current receive continuation */
+  guint            rx_zlp_count;   /* Consecutive zero-length reads on the
+                                    * current receive; bounded to avoid an
+                                    * unbounded resubmit loop */
 
   /* Temporary data used during SSMs */
   guint8  *fdt_event_data;     /* FDT event data (24 bytes) */
