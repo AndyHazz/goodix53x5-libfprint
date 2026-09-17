@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "configure" ]; then
+    if command -v systemd-hwdb >/dev/null 2>&1; then
+        systemd-hwdb update || true
+    fi
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload || true
+        systemctl try-restart fprintd.service || true
+    fi
+fi
+
+#DEBHELPER#

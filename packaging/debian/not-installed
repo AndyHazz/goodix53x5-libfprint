@@ -1,0 +1,5 @@
+# Development files from the libfprint build that this package does not ship.
+usr/include/libfprint-2/*
+usr/lib/*/libfprint-2.so
+usr/lib/*/pkgconfig/libfprint-2.pc
+usr/share/metainfo/org.freedesktop.libfprint.metainfo.xml

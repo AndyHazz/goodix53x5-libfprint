@@ -68,6 +68,34 @@ sudo systemctl restart fprintd
 
 This builds a patched libfprint with the driver included. No manual steps needed.
 
+### Debian / Ubuntu (.deb packages)
+
+Prebuilt packages for Ubuntu 24.04, Ubuntu 26.04, Debian 12 and Debian 13 are
+attached to each [GitHub release](https://github.com/AndyHazz/goodix53x5-libfprint/releases).
+Download the `.deb` for your distribution and install it:
+
+```bash
+sudo apt install ./libfprint-goodix53x5_*~ubuntu26.04_amd64.deb
+```
+
+The package installs libfprint (with this driver) under
+`/usr/lib/libfprint-goodix53x5/` and adds a systemd drop-in that makes
+`fprintd` load it. The distribution's own `libfprint-2-2` package is left
+untouched, so nothing is overwritten by later apt upgrades and
+`sudo apt remove libfprint-goodix53x5` restores the stock setup. fprintd is
+restarted automatically; then enroll with `fprintd-enroll`.
+
+To build the package yourself on any Debian-based system:
+
+```bash
+./packaging/build-deb.sh --install-deps
+sudo apt install ./dist/libfprint-goodix53x5_*.deb
+```
+
+See [packaging/README.md](packaging/README.md) for how the package is laid
+out, why it does not replace the distro's `libfprint-2-2`, and how to publish
+it through a Launchpad PPA.
+
 ### Other Distros: Quick Start
 
 ```bash
@@ -266,6 +294,14 @@ sigfm/
 
 images/
   goodix53x5-preprocessing-pipeline.png - Preprocessing pipeline visualization
+
+packaging/
+  README.md              - Packaging design, PPA publishing, Debian/upstream context
+  build-deb.sh           - Builds a Debian/Ubuntu package (libfprint + driver)
+  debian/                - Package metadata, fprintd systemd drop-in, hwdb entries
+
+.github/workflows/
+  deb.yml                - Builds the .deb for each distro; attaches them to releases
 ```
 
 ## Credits

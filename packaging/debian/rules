@@ -1,0 +1,27 @@
+#!/usr/bin/make -f
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+%:
+	dh $@ --buildsystem=meson
+
+override_dh_auto_configure:
+	dh_auto_configure -- \
+		-Dudev_rules=disabled \
+		-Dudev_hwdb=disabled \
+		-Dintrospection=false \
+		-Dinstalled-tests=false \
+		-Ddoc=false \
+		-Dgtk-examples=false
+
+# Stage into debian/tmp so the .install file can pick the library out of the
+# default libdir and place it in the private directory.
+override_dh_auto_install:
+	dh_auto_install --destdir=debian/tmp
+
+# libfprint's test suite needs umockdev and a running dbus; not useful here.
+override_dh_auto_test:
+
+# The library lives in a private directory; do not advertise a public shlibs
+# entry that other packages could pick up.
+override_dh_makeshlibs:
+	dh_makeshlibs -n

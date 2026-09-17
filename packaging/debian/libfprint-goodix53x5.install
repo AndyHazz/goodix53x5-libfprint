@@ -1,0 +1,3 @@
+usr/lib/*/libfprint-2.so.2* usr/lib/libfprint-goodix53x5/
+debian/fprintd-goodix53x5.conf usr/lib/systemd/system/fprintd.service.d/
+debian/61-libfprint-goodix53x5-autosuspend.hwdb usr/lib/udev/hwdb.d/
