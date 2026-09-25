@@ -7,7 +7,7 @@ index ae0f6e2..500d04e 100644
      'goodixmoc' :
          [ 'drivers/goodixmoc/goodix.c', 'drivers/goodixmoc/goodix_proto.c' ],
 +    'goodix53x5' :
-+        [ 'drivers/goodix53x5/goodix53x5.c', 'drivers/goodix53x5/goodix53x5-proto.c', 'drivers/goodix53x5/goodix53x5-crypto.c', 'drivers/goodix53x5/goodix53x5-transport.c', 'drivers/goodix53x5/goodix53x5-commands.c', 'drivers/goodix53x5/goodix53x5-session.c', 'drivers/goodix53x5/goodix53x5-scan.c', 'drivers/goodix53x5/goodix53x5-enroll.c', 'drivers/goodix53x5/goodix53x5-auth.c', 'drivers/goodix53x5/goodix53x5-match.c', 'drivers/goodix53x5/goodix53x5-calibration.c', 'drivers/goodix53x5/goodix53x5-image.c' ],
++        [ 'drivers/goodix53x5/goodix53x5.c', 'drivers/goodix53x5/goodix53x5-proto.c', 'drivers/goodix53x5/goodix53x5-crypto.c', 'drivers/goodix53x5/goodix53x5-transport.c', 'drivers/goodix53x5/goodix53x5-commands.c', 'drivers/goodix53x5/goodix53x5-session.c', 'drivers/goodix53x5/goodix53x5-scan.c', 'drivers/goodix53x5/goodix53x5-enroll.c', 'drivers/goodix53x5/goodix53x5-auth.c', 'drivers/goodix53x5/goodix53x5-match.c', 'drivers/goodix53x5/goodix53x5-calibration.c', 'drivers/goodix53x5/goodix53x5-image.c', 'drivers/goodix53x5/goodix53x5-variant5301.c' ],
      'fpcmoc' :
          [ 'drivers/fpcmoc/fpc.c' ],
      'realtek' :
@@ -88,11 +88,12 @@ diff --git a/data/autosuspend.hwdb b/data/autosuspend.hwdb
 index 6c15fb9..2bc8a69 100644
 --- a/data/autosuspend.hwdb
 +++ b/data/autosuspend.hwdb
-@@ -201,6 +201,13 @@ usb:v10A5pC844*
+@@ -201,6 +201,14 @@ usb:v10A5pC844*
   ID_AUTOSUSPEND=1
   ID_PERSIST=0
  
 +# Supported by libfprint driver goodix53x5
++usb:v27C6p5301*
 +usb:v27C6p5335*
 +usb:v27C6p5385*
 +usb:v27C6p5395*
@@ -102,8 +103,8 @@ index 6c15fb9..2bc8a69 100644
  # Supported by libfprint driver goodixmoc
  usb:v27C6p5840*
  usb:v27C6p6014*
-@@ -453,13 +460,10 @@ usb:v27C6p521D*
- usb:v27C6p5301*
+@@ -453,13 +461,9 @@ usb:v27C6p521D*
+-usb:v27C6p5301*
  usb:v27C6p530C*
  usb:v27C6p532D*
 -usb:v27C6p5335*
@@ -120,8 +121,8 @@ diff --git a/libfprint/fprint-list-udev-hwdb.c b/libfprint/fprint-list-udev-hwdb
 index 0527db1..097ddfb 100644
 --- a/libfprint/fprint-list-udev-hwdb.c
 +++ b/libfprint/fprint-list-udev-hwdb.c
-@@ -133,13 +133,10 @@ static const FpIdEntry allowlist_id_table[] = {
-   { .vid = 0x27c6, .pid = 0x5301 },
+@@ -133,13 +133,9 @@ static const FpIdEntry allowlist_id_table[] = {
+-  { .vid = 0x27c6, .pid = 0x5301 },
    { .vid = 0x27c6, .pid = 0x530c },
    { .vid = 0x27c6, .pid = 0x532d },
 -  { .vid = 0x27c6, .pid = 0x5335 },
