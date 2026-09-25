@@ -12,6 +12,7 @@ Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, fprintd
 Recommends: libpam-fprintd
 Enhances: fprintd
+Conflicts: fprintd-goodix53x5
 Description: libfprint with the Goodix HTK32 (27c6:5335/5385/5395) driver for fprintd
  Builds upstream libfprint with the community goodix53x5 driver for the
  Goodix HTK32 fingerprint sensor found in the Dell XPS 13 9305, XPS 13 7390
@@ -20,3 +21,8 @@ Description: libfprint with the Goodix HTK32 (27c6:5335/5385/5395) driver for fp
  The library is installed in a private directory and only fprintd is pointed
  at it, via a systemd drop-in. The distribution's libfprint-2-2 package is
  left untouched, so this package coexists with distro updates.
+ .
+ The drop-in sets LD_LIBRARY_PATH for fprintd, which the dynamic linker
+ consults before any RUNPATH in the fprintd binary. This package therefore
+ conflicts with fprintd-goodix53x5, which ships its own fprintd and libfprint
+ and locates them through RUNPATH.
