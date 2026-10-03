@@ -1,18 +1,29 @@
-# Goodix HTK32 (27c6:5335 / 27c6:5385 / 27c6:5395) libfprint Driver
+# Goodix HTK32 (27c6:5335 / 27c6:5385 / 27c6:5395 / 27c6:5301) libfprint Driver
 
 A libfprint driver for the Goodix HTK32 fingerprint sensor found in the **Dell XPS 13 9305**, the **Dell XPS 13 7390**, the **Dell XPS 15 9570**, the **Dell XPS 15 7590** and possibly other laptops using the `27c6:5335`, `27c6:5385` or `27c6:5395` USB device.
 
 ## Hardware
 
 - **Vendor ID:** `0x27c6`
-- **Product IDs:** `0x5335`, `0x5385`, `0x5395`
+- **Product IDs:** `0x5335`, `0x5385`, `0x5395`, and `0x5301` (chip 0x2202; see below)
 - **Sensor:** 108 x 88 pixels, capacitive press-type
 - **Known devices:** Dell XPS 13 9305, Dell XPS 13 7390 2-in-1, Dell XPS 15 9570, Dell XPS 15 7590
 
 Check if you have this sensor:
 ```
-lsusb | grep -E '27c6:(5335|5385|5395)'
+lsusb | grep -E '27c6:(5335|5385|5395|5301)'
 ```
+
+### 27c6:5301 variant
+
+The `27c6:5301` (Dell G3 3579/3779 era, chip ID `0x2202`, firmware `GF5288/GF3208_HT_APP_10035`) uses the same transport, commands, raw12 frame layout, configuration format and FDT flow as the 53x5, so it is handled by this driver as a variant selected through the USB ID table (`goodix53x5-variant5301.c`). It differs in four places, each derived from static analysis of its own Windows driver and confirmed on the sensor:
+
+- no PSK/GTLS pairing: frames arrive in the clear with a CRC-32 trailer and a fixed XOR stream that the driver undoes
+- a different 32-byte OTP checksum layout and calibration formulas (bytes 22/23 give tcode and delta-down)
+- its own 256-byte host configuration template, patched in two entries like the Windows host does
+- the reset command is answered with a 3-byte reply, which the driver consumes
+
+Its manual FDT reads return per-channel touch flags rather than baseline readings, so the variant keeps an all-zero FDT base and skips the two checks built on those readings: the open-time stability comparison (which would otherwise fail whenever a finger already rests on the sensor while the device opens, as at a lock screen) and the finger-wait false-event filter. Finger-down and finger-up events themselves work with the zero base.
 
 ## How It Works
 

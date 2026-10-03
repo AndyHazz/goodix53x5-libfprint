@@ -24,6 +24,7 @@
 #include "goodix53x5-session.h"
 #include "goodix53x5-enroll.h"
 #include "goodix53x5-auth.h"
+#include "goodix53x5-variant5301.h"
 
 G_DEFINE_TYPE (FpiDeviceGoodix53x5, fpi_device_goodix53x5,
                FP_TYPE_DEVICE)
@@ -125,6 +126,7 @@ static const FpIdEntry goodix53x5_id_table[] = {
   { .vid = 0x27c6, .pid = 0x5335, },
   { .vid = 0x27c6, .pid = 0x5385, },
   { .vid = 0x27c6, .pid = 0x5395, },
+  { .vid = 0x27c6, .pid = 0x5301, .driver_data = GOODIX_VARIANT_5301 },
   { .vid = 0, .pid = 0, .driver_data = 0 },
 };
 

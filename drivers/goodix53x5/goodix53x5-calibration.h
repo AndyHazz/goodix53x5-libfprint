@@ -38,6 +38,12 @@ void     goodix_device_patch_config (guint8              *config,
 void     goodix_device_fix_config_checksum (guint8 *config,
                                             gsize   config_len);
 
+void     goodix_device_replace_config_value (guint8 *config,
+                                             gsize   config_len,
+                                             int     section_num,
+                                             guint16 tag,
+                                             guint16 value);
+
 gboolean goodix_device_is_fdt_base_valid (const guint8 *data1,
                                           const guint8 *data2,
                                           gsize         len,

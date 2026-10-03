@@ -26,6 +26,7 @@
 #include "goodix53x5-calibration.h"
 #include "goodix53x5-image.h"
 #include "goodix53x5-scan.h"
+#include "goodix53x5-variant5301.h"
 
 #include <string.h>
 
@@ -136,9 +137,11 @@ goodix_ref_capture_ssm_handler (FpiSsm   *ssm,
             return;
           }
 
-        decrypted = goodix_crypto_gtls_decrypt_sensor_data (&self->gtls,
-                                                            pl, pl_len,
-                                                            &dec_len);
+        decrypted = goodix_is_5301 (dev)
+                    ? goodix_5301_unwrap_image (pl, pl_len, &dec_len)
+                    : goodix_crypto_gtls_decrypt_sensor_data (&self->gtls,
+                                                              pl, pl_len,
+                                                              &dec_len);
         if (decrypted == NULL)
           {
             fpi_ssm_mark_failed (ssm,
@@ -240,6 +243,20 @@ goodix_finger_wait_ssm_handler (FpiSsm   *ssm,
       break;
 
     case GOODIX_FINGER_WAIT_FDT_CHECK:
+      if (goodix_is_5301 (dev))
+        {
+          /* With the zero FDT base this firmware settles on, manual reads
+           * return per-channel touch flags rather than readings, so the
+           * baseline-drift comparison below is meaningless; the event alone
+           * marks the finger. */
+          fp_dbg ("Finger detected");
+          fpi_device_report_finger_status_changes (dev,
+                                                   FP_FINGER_STATUS_PRESENT,
+                                                   FP_FINGER_STATUS_NEEDED);
+          fpi_ssm_mark_completed (ssm);
+          break;
+        }
+
       /* FDT manual TX-off to verify the interrupt moved away from baseline. */
       goodix_cmd_fdt_manual (ssm, dev, FALSE, self->calib.fdt_base_manual);
       break;
@@ -315,9 +332,11 @@ goodix_capture_ssm_handler (FpiSsm   *ssm,
             return;
           }
 
-        decrypted = goodix_crypto_gtls_decrypt_sensor_data (&self->gtls,
-                                                             pl, pl_len,
-                                                             &dec_len);
+        decrypted = goodix_is_5301 (dev)
+                    ? goodix_5301_unwrap_image (pl, pl_len, &dec_len)
+                    : goodix_crypto_gtls_decrypt_sensor_data (&self->gtls,
+                                                              pl, pl_len,
+                                                              &dec_len);
         if (decrypted == NULL)
           {
             fpi_ssm_mark_failed (ssm,

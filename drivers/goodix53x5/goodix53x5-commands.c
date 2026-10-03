@@ -23,6 +23,7 @@
 #include "goodix53x5-private.h"
 #include "goodix53x5-transport.h"
 #include "goodix53x5-commands.h"
+#include "goodix53x5-variant5301.h"
 
 #include <string.h>
 
@@ -112,7 +113,9 @@ goodix_cmd_reset_sensor (FpiSsm *ssm, FpDevice *dev)
   guint16 msg = 0x01 | (20 << 8);
   guint8 payload[2] = { msg & 0xFF, (msg >> 8) & 0xFF };
 
-  goodix_run_cmd (ssm, dev, 0xA, 0x1, payload, 2, FALSE);
+  /* The 5301 firmware answers the reset with a 3-byte reply; consume it so
+   * it is not mistaken for the next command's ACK. */
+  goodix_run_cmd (ssm, dev, 0xA, 0x1, payload, 2, goodix_is_5301 (dev));
 }
 
 void

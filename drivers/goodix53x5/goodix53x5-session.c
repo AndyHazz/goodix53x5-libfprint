@@ -25,6 +25,7 @@
 #include "goodix53x5-commands.h"
 #include "goodix53x5-calibration.h"
 #include "goodix53x5-session.h"
+#include "goodix53x5-variant5301.h"
 
 #include <string.h>
 #include <openssl/rand.h>
@@ -201,6 +202,22 @@ goodix_open_ssm_handler (FpiSsm   *ssm,
         g_clear_pointer (&self->otp_data, g_free);
         self->otp_data = g_memdup2 (pl, pl_len);
         self->otp_len = pl_len;
+
+        if (goodix_is_5301 (dev))
+          {
+            if (!goodix_5301_verify_otp (pl, pl_len))
+              {
+                fpi_ssm_mark_failed (ssm,
+                                     fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                               "OTP checksum verification failed"));
+                return;
+              }
+
+            goodix_5301_parse_otp (pl, pl_len, &self->calib);
+            /* No PSK/GTLS pairing on this firmware */
+            fpi_ssm_jump_to_state (ssm, GOODIX_OPEN_UPLOAD_CONFIG);
+            return;
+          }
 
         if (!goodix_device_verify_otp (pl, pl_len))
           {
@@ -398,6 +415,19 @@ goodix_open_ssm_handler (FpiSsm   *ssm,
 
     case GOODIX_OPEN_UPLOAD_CONFIG:
       {
+        if (goodix_is_5301 (dev))
+          {
+            gsize cfg_len;
+            const guint8 *def_cfg = goodix_5301_get_default_config (&cfg_len);
+            guint8 *cfg = g_memdup2 (def_cfg, cfg_len);
+
+            self->open_fdt_retries = 0;
+            goodix_5301_patch_config (cfg, cfg_len, &self->calib);
+            goodix_cmd_upload_config (ssm, dev, cfg, cfg_len);
+            g_free (cfg);
+            break;
+          }
+
         /* First validate GTLS done response */
         {
           const guint8 *mcu_data;
@@ -500,6 +530,17 @@ goodix_open_ssm_handler (FpiSsm   *ssm,
             return;
           }
 
+        if (goodix_is_5301 (dev))
+          {
+            /* This firmware answers zero-base manual reads with per-channel
+             * touch flags, not readings: they flicker while a finger rests
+             * on the sensor during open (as at a lock screen), which is not
+             * baseline instability. Detection was validated with the zero
+             * base, which GENERATE_FDT_BASE keeps for this variant. */
+            fpi_ssm_next_state (ssm);
+            return;
+          }
+
         /* Validate against the open-time FDT base we just recorded. */
         if (!goodix_device_is_fdt_base_valid (pl + 4,
                                               self->fdt_data_tx_on,
@@ -531,7 +572,7 @@ goodix_open_ssm_handler (FpiSsm   *ssm,
     case GOODIX_OPEN_GENERATE_FDT_BASE:
       {
         /* Generate FDT base from TX-on data */
-        if (self->fdt_data_tx_on)
+        if (self->fdt_data_tx_on && !goodix_is_5301 (dev))
           {
             guint8 fdt_base[GOODIX_FDT_BASE_LEN];
             goodix_device_generate_fdt_base (self->fdt_data_tx_on,

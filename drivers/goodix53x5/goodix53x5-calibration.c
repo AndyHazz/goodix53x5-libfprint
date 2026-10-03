@@ -235,16 +235,16 @@ goodix_device_parse_otp (const guint8      *otp,
 }
 
 /**
- * replace_value_in_section:
+ * goodix_device_replace_config_value:
  *
  * Replace a tagged value in a config section.
  */
-static void
-replace_value_in_section (guint8 *config,
-                          gsize   config_len,
-                          int     section_num,
-                          guint16 tag,
-                          guint16 value)
+void
+goodix_device_replace_config_value (guint8 *config,
+                                    gsize   config_len,
+                                    int     section_num,
+                                    guint16 tag,
+                                    guint16 value)
 {
   const guint8 *section_table = config + 1;
   guint8 section_base = section_table[section_num * 2];
@@ -297,15 +297,15 @@ goodix_device_patch_config (guint8              *config,
                             gsize                config_len,
                             const GoodixCalibParams *params)
 {
-  replace_value_in_section (config, config_len, 2, TCODE_TAG, params->tcode);
-  replace_value_in_section (config, config_len, 3, TCODE_TAG, params->tcode);
-  replace_value_in_section (config, config_len, 4, TCODE_TAG, params->tcode);
-  replace_value_in_section (config, config_len, 2, DAC_L_TAG,
-                            (params->dac_l << 4) | 8);
-  replace_value_in_section (config, config_len, 3, DAC_L_TAG,
-                            (params->dac_l << 4) | 8);
-  replace_value_in_section (config, config_len, 2, DELTA_DOWN_TAG,
-                            (params->delta_down << 8) | 0x80);
+  goodix_device_replace_config_value (config, config_len, 2, TCODE_TAG, params->tcode);
+  goodix_device_replace_config_value (config, config_len, 3, TCODE_TAG, params->tcode);
+  goodix_device_replace_config_value (config, config_len, 4, TCODE_TAG, params->tcode);
+  goodix_device_replace_config_value (config, config_len, 2, DAC_L_TAG,
+                                      (params->dac_l << 4) | 8);
+  goodix_device_replace_config_value (config, config_len, 3, DAC_L_TAG,
+                                      (params->dac_l << 4) | 8);
+  goodix_device_replace_config_value (config, config_len, 2, DELTA_DOWN_TAG,
+                                      (params->delta_down << 8) | 0x80);
 
   goodix_device_fix_config_checksum (config, config_len);
 }
