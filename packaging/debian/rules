@@ -1,0 +1,36 @@
+#!/usr/bin/make -f
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+DPKG_EXPORT_BUILDFLAGS = 1
+include /usr/share/dpkg/buildflags.mk
+include /usr/share/dpkg/architecture.mk
+
+PRIVATE_LIBDIR = usr/lib/$(DEB_HOST_MULTIARCH)/libfprint-goodix53x5
+
+%:
+	dh $@
+
+# The Milan stack builder verifies, patches, builds and tests the pinned
+# libfprint and fprintd, then stages the release payload.
+override_dh_auto_configure override_dh_auto_test:
+
+override_dh_auto_build:
+	GOODIX53X5_DEBUG=0 GOODIX_MILAN_STACK_ROOT=$(CURDIR)/debian/.milan-stack \
+		scripts/build-milan-stack-local.sh --package-root $(CURDIR)/debian/stage
+
+override_dh_auto_install:
+	mkdir -p debian/tmp
+	cp -a debian/stage/. debian/tmp/
+
+override_dh_auto_clean:
+	rm -rf debian/.milan-stack debian/stage
+
+# The maintainer scripts start and restart fprintd themselves.
+override_dh_installsystemd:
+
+# The private libfprint is not a public shared library.
+override_dh_makeshlibs:
+	dh_makeshlibs -Xlibfprint-goodix53x5
+
+override_dh_shlibdeps:
+	dh_shlibdeps -l$(CURDIR)/debian/fprintd-goodix53x5/$(PRIVATE_LIBDIR) -- --ignore-missing-info

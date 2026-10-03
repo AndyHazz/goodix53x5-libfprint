@@ -1,0 +1,32 @@
+changelog:
+  exclude:
+    labels:
+      - skip-notes
+  categories:
+    - title: ⚠️ Action required
+      labels:
+        - breaking
+    - title: New features
+      labels:
+        - feature
+    - title: Recognition and Windows parity
+      labels:
+        - matching
+    - title: Fixes
+      labels:
+        - fix
+    - title: Performance
+      labels:
+        - performance
+    - title: Security
+      labels:
+        - security
+    - title: Hardware support
+      labels:
+        - hardware
+    - title: Packaging and installation
+      labels:
+        - packaging
+    - title: Other changes
+      labels:
+        - "*"
