@@ -1,0 +1,19 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = install ] || [ "$1" = upgrade ]; then
+	for path in /usr/share/goodix53x5-milan/inventory.json /opt/goodix53x5-milan \
+		/etc/systemd/system/fprintd.service.d/98-goodix53x5-milan-stack.conf; do
+		if [ -e "$path" ]; then
+			printf '%s\n' "fprintd-goodix53x5: found a source installation made by ./install.sh:" \
+			  "  $path" \
+			  "Remove it with ./uninstall.sh from the checkout that installed it," \
+			  "then install this package again." >&2
+			exit 1
+		fi
+	done
+fi
+
+#DEBHELPER#
+
+exit 0
