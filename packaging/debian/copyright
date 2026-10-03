@@ -1,0 +1,20 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: libfprint-goodix53x5
+Source: https://github.com/AndyHazz/goodix53x5-libfprint
+
+Files: *
+Copyright: libfprint authors
+License: LGPL-2.1+
+
+Files: libfprint/drivers/goodix53x5/* libfprint/sigfm/*
+Copyright: goodix53x5-libfprint contributors
+License: LGPL-2.1+
+
+License: LGPL-2.1+
+ This library is free software; you can redistribute it and/or modify it under
+ the terms of the GNU Lesser General Public License as published by the Free
+ Software Foundation; either version 2.1 of the License, or (at your option)
+ any later version.
+ .
+ On Debian systems, the complete text of the GNU Lesser General Public License
+ version 2.1 can be found in "/usr/share/common-licenses/LGPL-2.1".

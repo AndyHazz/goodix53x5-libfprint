@@ -1,0 +1,52 @@
+name: Debian/Ubuntu packages
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths: ['packaging/**', '.github/workflows/deb.yml', 'drivers/**', 'sigfm/**', 'meson-integration.patch', 'install.sh']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['ubuntu:24.04', 'ubuntu:26.04', 'debian:12', 'debian:13']
+    steps:
+      - name: Install git
+        run: apt-get update && apt-get install -y git ca-certificates
+      - uses: actions/checkout@v4
+      - name: Build package
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          ./packaging/build-deb.sh --install-deps
+      - name: Smoke-test install
+        run: |
+          apt-get install -y ./dist/libfprint-goodix53x5_*.deb
+          test -f /usr/lib/libfprint-goodix53x5/libfprint-2.so.2
+          test -f /usr/lib/systemd/system/fprintd.service.d/fprintd-goodix53x5.conf
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.image }}
+          path: dist/*.deb
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Attach packages to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" dist/*.deb --repo "${GITHUB_REPOSITORY}" --clobber

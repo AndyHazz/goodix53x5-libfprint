@@ -1,0 +1,6 @@
+# Goodix HTK32 fingerprint sensors supported by the goodix53x5 driver.
+usb:v27C6p5335*
+usb:v27C6p5385*
+usb:v27C6p5395*
+ ID_AUTOSUSPEND=1
+ ID_PERSIST=0
