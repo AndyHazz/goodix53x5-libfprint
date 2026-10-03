@@ -1,0 +1,3 @@
+# Native test fixtures are generated binary data throughout the repository.
+*.bin binary linguist-generated=true
+*.bin.gz binary linguist-generated=true

@@ -1,69 +1,49 @@
+diff --git a/meson_options.txt b/meson_options.txt
+index 8f59b28..a9af6ec 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -34,3 +34,15 @@ option('installed-tests',
+        description: 'Whether to install the installed tests',
+        type: 'boolean',
+        value: true)
++option('goodix53x5_debug',
++       description: 'Build opt-in Goodix 53x5 image and timing diagnostics',
++       type: 'boolean',
++       value: false)
++option('goodix53x5_debug_build_id',
++       description: 'Unique build identity emitted by Goodix 53x5 diagnostics',
++       type: 'string',
++       value: '')
++option('goodix53x5_debug_source_id',
++       description: 'Deterministic source identity embedded in Goodix 53x5 debug builds',
++       type: 'string',
++       value: '')
 diff --git a/libfprint/meson.build b/libfprint/meson.build
-index ae0f6e2..500d04e 100644
+index ae0f6e2..bb4bc29 100644
 --- a/libfprint/meson.build
 +++ b/libfprint/meson.build
-@@ -147,6 +147,8 @@ driver_sources = {
+@@ -89,3 +89,5 @@ driver_sources = {
++subdir('drivers/goodix53x5')
++
+ driver_sources = {
+     'upekts' :
+         [ 'drivers/upekts.c', 'drivers/upek_proto.c' ],
+@@ -147,6 +149,8 @@ driver_sources = {
          [ 'drivers/synaptics/synaptics.c', 'drivers/synaptics/bmkt_message.c' ],
      'goodixmoc' :
          [ 'drivers/goodixmoc/goodix.c', 'drivers/goodixmoc/goodix_proto.c' ],
 +    'goodix53x5' :
-+        [ 'drivers/goodix53x5/goodix53x5.c', 'drivers/goodix53x5/goodix53x5-proto.c', 'drivers/goodix53x5/goodix53x5-crypto.c', 'drivers/goodix53x5/goodix53x5-transport.c', 'drivers/goodix53x5/goodix53x5-commands.c', 'drivers/goodix53x5/goodix53x5-session.c', 'drivers/goodix53x5/goodix53x5-scan.c', 'drivers/goodix53x5/goodix53x5-enroll.c', 'drivers/goodix53x5/goodix53x5-auth.c', 'drivers/goodix53x5/goodix53x5-match.c', 'drivers/goodix53x5/goodix53x5-calibration.c', 'drivers/goodix53x5/goodix53x5-image.c' ],
++        goodix53x5_sources,
      'fpcmoc' :
          [ 'drivers/fpcmoc/fpc.c' ],
      'realtek' :
-@@ -259,6 +261,32 @@ libnbis = static_library('nbis',
-     ]),
-     install: false)
- 
-+# SIGFM: SIFT-based fingerprint matching for small sensors
-+# Use pkg-config only for the include path; link only the OpenCV modules we
-+# need (the full opencv pkg-config pulls modules like viz/hdf that have
-+# missing transitive deps).
-+opencv_pc = dependency('opencv5', required: false)
-+if not opencv_pc.found()
-+    opencv_pc = dependency('opencv4')
-+endif
-+opencv_includes = opencv_pc.partial_dependency(compile_args: true, includes: true)
-+opencv_core = cc.find_library('opencv_core')
-+# OpenCV 5 renamed the features2d module to features
-+opencv_features2d = cc.find_library('opencv_features2d', required: false)
-+if not opencv_features2d.found()
-+    opencv_features2d = cc.find_library('opencv_features')
-+endif
-+opencv_flann = cc.find_library('opencv_flann')
-+opencv_imgproc = cc.find_library('opencv_imgproc')
-+opencv_dep = declare_dependency(
-+    dependencies: [opencv_includes, opencv_core, opencv_features2d, opencv_flann, opencv_imgproc],
-+)
-+libsigfm = static_library('sigfm',
-+    'sigfm/sigfm.cpp',
-+    dependencies: [opencv_dep],
-+    cpp_args: ['-std=c++17'],
-+    install: false)
-+
- libfprint_private = static_library('fprint-private',
-     sources: [
-         fpi_enums,
-@@ -272,7 +300,7 @@ libfprint_drivers = static_library('fprint-drivers',
-     sources: drivers_sources,
-     c_args: drivers_cflags,
-     dependencies: deps,
--    link_with: libfprint_private,
-+    link_with: [libfprint_private, libsigfm],
-     install: false)
- 
- mapfile = files('libfprint.ver')[0]
-@@ -292,8 +320,8 @@ libfprint = shared_library(versioned_libname.split('lib')[1],
-     version: libversion,
-     link_args : vflag,
-     link_depends : mapfile,
--    link_with: [libfprint_drivers, libfprint_private],
--    dependencies: deps,
-+    link_with: [libfprint_drivers, libfprint_private, libsigfm],
-+    dependencies: deps + [opencv_dep],
-     install: true)
- 
- libfprint_dep = declare_dependency(link_with: libfprint,
+@@ -173,5 +177,6 @@ helper_sources = {
+ drivers_sources = []
+ drivers_cflags = []
++drivers_cflags += goodix53x5_cflags
+ foreach driver: drivers
+     drivers_sources += driver_sources[driver]
+ endforeach
 diff --git a/meson.build b/meson.build
 index 14fb11f..b4f6101 100644
 --- a/meson.build
@@ -134,3 +114,171 @@ index 0527db1..097ddfb 100644
    { .vid = 0x27c6, .pid = 0x5503 },
    { .vid = 0x27c6, .pid = 0x550a },
    { .vid = 0x27c6, .pid = 0x550c },
+diff --git a/tests/meson.build b/tests/meson.build
+index 00aa566..f0c5dcf 100644
+--- a/tests/meson.build
++++ b/tests/meson.build
+@@ -324,3 +324,163 @@ foreach test_name: unit_tests
++if 'goodix53x5' in drivers
++    executable(
++        'goodix53x5-native-match-inputs',
++        'test-goodix53x5-milan-native-match-inputs.c',
++        'test-goodix53x5-milan-state-support.c',
++        'test-goodix53x5-milan-state-study-fixtures.c',
++        'test-goodix53x5-milan-state-study-assertions.c',
++        dependencies: libfprint_private_dep,
++        c_args: common_cflags + goodix53x5_cflags,
++        link_with: libfprint_drivers,
++        install: false,
++    )
++    native_match = executable(
++        'test-goodix53x5-milan-native-match',
++        'test-goodix53x5-milan-native-match.c',
++        'test-goodix53x5-milan-state-study-assertions.c',
++        dependencies: libfprint_private_dep,
++        c_args: common_cflags + goodix53x5_cflags + [
++            '-DNATIVE_MATCH_FIXTURES="' + join_paths(meson.current_source_dir(),
++                'native-match', 'fixtures') + '"',
++        ],
++        link_with: libfprint_drivers,
++        install: false,
++    )
++    test('goodix53x5-milan-native-match', native_match,
++        suite: ['unit-tests'], env: envs)
++
++    native_preprocess = executable(
++        'test-goodix53x5-milan-native-preprocess',
++        'test-goodix53x5-milan-native-preprocess.c',
++        dependencies: libfprint_private_dep,
++        c_args: common_cflags + goodix53x5_cflags + [
++            '-DNATIVE_PREPROCESS_FIXTURES="' + join_paths(meson.current_source_dir(),
++                'native-preprocess', 'fixtures') + '"',
++        ],
++        link_with: libfprint_drivers,
++        install: false,
++    )
++    test('goodix53x5-milan-native-preprocess', native_preprocess,
++        suite: ['unit-tests'], env: envs)
++
++    native_study_support = files(
++        'test-goodix53x5-milan-state-support.c',
++        'test-goodix53x5-milan-state-study-fixtures.c',
++        'test-goodix53x5-milan-state-study-assertions.c',
++        'test-goodix53x5-milan-state-study-candidates.c',
++    )
++    executable(
++        'goodix53x5-native-study-inputs',
++        'test-goodix53x5-milan-native-study-inputs.c', native_study_support,
++        dependencies: libfprint_private_dep,
++        c_args: common_cflags + goodix53x5_cflags,
++        link_with: libfprint_drivers,
++        install: false,
++    )
++    native_study = executable(
++        'test-goodix53x5-milan-native-study',
++        'test-goodix53x5-milan-native-study.c',
++        'test-goodix53x5-milan-state-study-assertions.c',
++        dependencies: libfprint_private_dep,
++        c_args: common_cflags + goodix53x5_cflags + [
++            '-DNATIVE_STUDY_FIXTURES="' + join_paths(meson.current_source_dir(),
++                'native-study', 'fixtures') + '"',
++        ],
++        link_with: libfprint_drivers,
++        install: false,
++    )
++    test('goodix53x5-milan-native-study', native_study,
++        suite: ['unit-tests'], env: envs)
++
++    goodix53x5_milan_synthetic = executable(
++        'test-goodix53x5-milan-synthetic',
++        'test-goodix53x5-milan-synthetic.c',
++        'test-goodix53x5-milan-synthetic-preprocess.c',
++        'test-goodix53x5-milan-synthetic-temporal.c',
++        'test-goodix53x5-milan-synthetic-extraction.c',
++        'test-goodix53x5-milan-synthetic-enrollment.c',
++        'test-goodix53x5-milan-synthetic-match-policy.c',
++        'test-goodix53x5-milan-synthetic-replay.c',
++        'test-goodix53x5-milan-synthetic-support.c',
++        'test-goodix53x5-milan-synthetic-replay-support.c',
++        dependencies: libfprint_private_dep,
++        c_args: common_cflags + goodix53x5_cflags,
++        link_with: libfprint_drivers,
++        install: false,
++    )
++    test('goodix53x5-milan-synthetic',
++        goodix53x5_milan_synthetic,
++        suite: ['unit-tests'],
++        env: envs)
++
++    goodix53x5_milan_state = executable(
++        'test-goodix53x5-milan-state',
++        'test-goodix53x5-milan-state.c',
++        'test-goodix53x5-milan-state-support.c',
++        'test-goodix53x5-milan-state-queue.c',
++        'test-goodix53x5-milan-state-template.c',
++        'test-goodix53x5-milan-state-study-fixtures.c',
++        'test-goodix53x5-milan-state-study-assertions.c',
++        'test-goodix53x5-milan-state-study-actions.c',
++        'test-goodix53x5-milan-state-handoff.c',
++        'test-goodix53x5-milan-state-match-order.c',
++        'test-goodix53x5-milan-state-bitmap.c',
++        'test-goodix53x5-milan-state-study-candidates.c',
++        dependencies: libfprint_private_dep,
++        c_args: common_cflags + goodix53x5_cflags,
++        link_with: libfprint_drivers,
++        install: false,
++    )
++    test('goodix53x5-milan-state',
++        goodix53x5_milan_state,
++        suite: ['unit-tests'],
++        env: envs)
++
++    goodix53x5_milan_transport = executable(
++        'test-goodix53x5-milan-transport',
++        ['test-goodix53x5-milan-transport.c', 'test-goodix53x5-milan-transport-fixture.c'],
++        dependencies: libfprint_private_dep,
++        include_directories: include_directories('../libfprint/drivers/goodix53x5'),
++        c_args: common_cflags + goodix53x5_cflags,
++        link_with: libfprint_drivers,
++        install: false,
++    )
++    test('goodix53x5-milan-transport', goodix53x5_milan_transport,
++        suite: ['unit-tests'], env: envs)
++
++    goodix53x5_milan_runtime_units = static_library(
++        'goodix53x5-milan-runtime-test-units',
++        [
++            '../libfprint/drivers/goodix53x5/milan/runtime.c',
++            '../libfprint/drivers/goodix53x5/device/auth.c',
++            '../libfprint/drivers/goodix53x5/device/enroll.c',
++        ],
++        dependencies: libfprint_private_dep,
++        c_args: common_cflags + goodix53x5_cflags + [
++            '-include',
++            join_paths(meson.current_source_dir(),
++                       'test-goodix53x5-milan-runtime-seam.h'),
++        ],
++        install: false,
++    )
++    goodix53x5_milan_runtime = executable(
++        'test-goodix53x5-milan-runtime',
++        'test-goodix53x5-milan-runtime.c',
++        'test-goodix53x5-milan-runtime-auth.c',
++        'test-goodix53x5-milan-runtime-enrollment.c',
++        'test-goodix53x5-milan-runtime-guards.c',
++        'test-goodix53x5-milan-runtime-harness.c',
++        'test-goodix53x5-milan-runtime-support.c',
++        dependencies: libfprint_private_dep,
++        c_args: common_cflags + goodix53x5_cflags,
++        link_with: [libfprint_drivers, goodix53x5_milan_runtime_units],
++        install: false,
++    )
++    test('goodix53x5-milan-runtime',
++        goodix53x5_milan_runtime,
++        suite: ['unit-tests'],
++        env: envs)
++endif
++
+ # Run udev rule generator with fatal warnings
+ envs.set('UDEV_HWDB', udev_hwdb.full_path())
+ envs.set('UDEV_HWDB_CHECK_CONTENTS', default_drivers_are_enabled ? '1' : '0')

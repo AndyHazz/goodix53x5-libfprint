@@ -20,10 +20,15 @@
 #define FP_COMPONENT "goodix53x5"
 
 #include "drivers_api.h"
-#include "goodix53x5-private.h"
-#include "goodix53x5-session.h"
-#include "goodix53x5-enroll.h"
-#include "goodix53x5-auth.h"
+#include "driver-private.h"
+#include "device/session.h"
+#include "device/enroll.h"
+#include "device/auth.h"
+#include "device/persistence.h"
+#include "device/transport.h"
+#include "device/scan.h"
+
+#include <string.h>
 
 G_DEFINE_TYPE (FpiDeviceGoodix53x5, fpi_device_goodix53x5,
                FP_TYPE_DEVICE)
@@ -35,60 +40,39 @@ G_DEFINE_TYPE (FpiDeviceGoodix53x5, fpi_device_goodix53x5,
 static void
 goodix_open (FpDevice *dev)
 {
+  FpiDeviceGoodix53x5 *self = FPI_DEVICE_GOODIX53X5 (dev);
+
+  self->open_recovery_attempted = FALSE;
+  self->open_usb_reset_required = FALSE;
+  g_clear_object (&self->session_cancel);
+  self->session_cancel = g_cancellable_new ();
+  self->session_suspended = FALSE;
+  self->suspend_pending = FALSE;
   goodix_start_open_ssm (dev);
 }
 
 static void
 goodix_close (FpDevice *dev)
 {
-  FpiDeviceGoodix53x5 *self = FPI_DEVICE_GOODIX53X5 (dev);
-  GError *error = NULL;
-
-  self->blocking_ssm = NULL;
-  self->suspend_pending = FALSE;
-  g_clear_object (&self->cancel);
-  goodix_clear_pending_result_report (self);
-  g_clear_pointer (&self->fdt_event_data, g_free);
-  g_clear_pointer (&self->fdt_data_tx_on, g_free);
-  g_clear_pointer (&self->otp_data, g_free);
-  g_clear_pointer (&self->fw_version, g_free);
-  g_clear_pointer (&self->rx.buf, g_free);
-  g_clear_pointer (&self->reference_image, g_free);
-  g_clear_pointer (&self->captured_image, g_free);
-  g_clear_pointer (&self->enroll_features, g_ptr_array_unref);
-
-  if (self->cmd)
-    {
-      g_free (self->cmd->payload);
-      g_clear_pointer (&self->cmd, g_free);
-    }
-
-  self->action_result_reported = FALSE;
-  self->verify_wait_finger_up = FALSE;
-
-  g_usb_device_release_interface (fpi_device_get_usb_device (dev),
-                                  GOODIX_USB_INTERFACE, 0, &error);
-  self->usb_interface_claimed = FALSE;
-
-  fpi_device_close_complete (dev, error);
+  goodix_session_close (dev);
 }
 
 static void
 goodix_enroll (FpDevice *dev)
 {
-  goodix_enroll_start (dev);
+  goodix_session_start_action (dev);
 }
 
 static void
 goodix_verify (FpDevice *dev)
 {
-  goodix_auth_start (dev);
+  goodix_session_start_action (dev);
 }
 
 static void
 goodix_identify (FpDevice *dev)
 {
-  goodix_auth_start (dev);
+  goodix_session_start_action (dev);
 }
 
 static void
@@ -108,8 +92,30 @@ goodix_cancel (FpDevice *dev)
 {
   FpiDeviceGoodix53x5 *self = FPI_DEVICE_GOODIX53X5 (dev);
 
+  if (goodix_session_cancel_pending_action (dev))
+    return;
+
   if (self->cancel)
-    g_cancellable_cancel (self->cancel);
+    {
+      self->action_epoch++;
+      g_cancellable_cancel (self->cancel);
+    }
+}
+
+static void
+goodix_removed (FpDevice *dev, GParamSpec *pspec, gpointer data)
+{
+  FpiDeviceGoodix53x5 *self = FPI_DEVICE_GOODIX53X5 (dev);
+  gboolean removed = FALSE;
+
+  g_object_get (dev, "removed", &removed, NULL);
+  if (!removed || (!self->session_open && !self->task_ssm))
+    return;
+  self->needs_reinit = TRUE;
+  if (self->session_cancel)
+    g_cancellable_cancel (self->session_cancel);
+  goodix_scan_stop_coordinator (
+    dev, fpi_device_error_new (FP_DEVICE_ERROR_REMOVED));
 }
 
 /* ========================================================================
@@ -119,6 +125,16 @@ goodix_cancel (FpDevice *dev)
 static void
 fpi_device_goodix53x5_init (FpiDeviceGoodix53x5 *self)
 {
+#ifdef GOODIX53X5_DEBUG
+  g_autofree gchar *capture_session_id = g_uuid_string_random ();
+
+  g_strlcpy (self->debug_capture_session_id, capture_session_id,
+             sizeof (self->debug_capture_session_id));
+#endif
+  memset (self->psk, 0, sizeof (self->psk));
+  self->profile9_fdt.drift_anchor_empty = TRUE;
+  self->session_cancel = g_cancellable_new ();
+  g_signal_connect (self, "notify::removed", G_CALLBACK (goodix_removed), NULL);
 }
 
 static const FpIdEntry goodix53x5_id_table[] = {
@@ -129,17 +145,30 @@ static const FpIdEntry goodix53x5_id_table[] = {
 };
 
 static void
+goodix_finalize (GObject *object)
+{
+  FpiDeviceGoodix53x5 *self = FPI_DEVICE_GOODIX53X5 (object);
+
+  goodix_milan_generation_invalidate (&self->milan_retained_generation);
+  g_clear_pointer (&self->hardware_reference, g_free);
+  g_clear_object (&self->session_cancel);
+  G_OBJECT_CLASS (fpi_device_goodix53x5_parent_class)->finalize (object);
+}
+
+static void
 fpi_device_goodix53x5_class_init (FpiDeviceGoodix53x5Class *klass)
 {
   FpDeviceClass *dev_class = FP_DEVICE_CLASS (klass);
 
+  G_OBJECT_CLASS (klass)->finalize = goodix_finalize;
   dev_class->id = "goodix53x5";
   dev_class->full_name = "Goodix HTK32 Fingerprint Sensor";
   dev_class->type = FP_DEVICE_TYPE_USB;
   dev_class->scan_type = FP_SCAN_TYPE_PRESS;
   dev_class->id_table = goodix53x5_id_table;
   dev_class->nr_enroll_stages = GOODIX_ENROLL_SAMPLES;
-  dev_class->temp_hot_seconds = -1; /* Disable thermal throttling — small sensor */
+  /* Native Milan has no equivalent time-based thermal cutoff. */
+  dev_class->temp_hot_seconds = -1;
   dev_class->features = FP_DEVICE_FEATURE_VERIFY | FP_DEVICE_FEATURE_IDENTIFY;
 
   dev_class->open = goodix_open;

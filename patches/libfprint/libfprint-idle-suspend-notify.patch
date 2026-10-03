@@ -1,0 +1,119 @@
+Libfprint-Idle-Suspend-Notify-Patch: 4
+Base-Revision: 0c97a47d8ef405cd577b87058c1e89cae9d242e7
+Base-Tag: v1.94.10
+
+diff --git a/libfprint/fp-device.c b/libfprint/fp-device.c
+index 6040c1be58ef1b2680a6dce8d4c67da99fd77f35..09890c37ac03c5c9e7bde8aee827750a24f9c644 100644
+--- a/libfprint/fp-device.c
++++ b/libfprint/fp-device.c
+@@ -919,7 +919,9 @@ fp_device_close (FpDevice           *device,
+       return;
+     }
+ 
+-  if (priv->current_task || priv->is_suspended)
++  /* A quiesced Goodix session may be closed without resuming hardware,
++   * for example after removal during sleep; a pending power task may not. */
++  if (priv->current_task || priv->suspend_resume_task)
+     {
+       g_task_return_error (task,
+                            fpi_device_error_new (FP_DEVICE_ERROR_BUSY));
+diff --git a/libfprint/fpi-device.c b/libfprint/fpi-device.c
+index a1be30c0e6c5cdf4d68bf6cbb6061b66c0042561..2d2d32a8c1fb82b344597e85d03fb3c17c00f020 100644
+--- a/libfprint/fpi-device.c
++++ b/libfprint/fpi-device.c
+@@ -1615,7 +1615,11 @@ fpi_device_suspend (FpDevice *device)
+   switch (priv->current_action)
+     {
+     case FPI_DEVICE_ACTION_NONE:
+-      fpi_device_suspend_complete (device, NULL);
++      /* An open Goodix device keeps servicing its hardware while idle. */
++      if (priv->is_open && FP_DEVICE_GET_CLASS (device)->suspend)
++        FP_DEVICE_GET_CLASS (device)->suspend (device);
++      else
++        fpi_device_suspend_complete (device, NULL);
+       break;
+ 
+     case FPI_DEVICE_ACTION_ENROLL:
+@@ -1642,9 +1646,11 @@ fpi_device_suspend (FpDevice *device)
+     case FPI_DEVICE_ACTION_DELETE:
+     case FPI_DEVICE_ACTION_LIST:
+     case FPI_DEVICE_ACTION_CLEAR_STORAGE:
++      /* Dispatch again once the short action completed, so the driver
++       * still quiesces a device that this action just opened. */
+       g_signal_connect_object (priv->current_task,
+                                "notify::completed",
+-                               G_CALLBACK (complete_suspend_resume_task),
++                               G_CALLBACK (fpi_device_suspend),
+                                device,
+                                G_CONNECT_SWAPPED);
+ 
+@@ -1660,7 +1666,10 @@ fpi_device_resume (FpDevice *device)
+   switch (priv->current_action)
+     {
+     case FPI_DEVICE_ACTION_NONE:
+-      fpi_device_resume_complete (device, NULL);
++      if (priv->is_open && FP_DEVICE_GET_CLASS (device)->resume)
++        FP_DEVICE_GET_CLASS (device)->resume (device);
++      else
++        fpi_device_resume_complete (device, NULL);
+       break;
+ 
+     case FPI_DEVICE_ACTION_ENROLL:
+diff --git a/libfprint/fpi-device.h b/libfprint/fpi-device.h
+index ab154bc1f55fd70702222fff2135b5ca825474c0..bd996eb22edcad6952f6dce5f505ca96b9229914 100644
+--- a/libfprint/fpi-device.h
++++ b/libfprint/fpi-device.h
+@@ -112,6 +112,9 @@ struct _FpIdEntry
+  *    IDENTIFY or CAPTURE) and the system is about to go into suspend.
+  * @resume: Called to resume an ongoing interactive action after the system has
+  *    resumed from suspend.
++ *    In this Goodix-only build both handlers also run for an open device
++ *    without an action, so the driver can quiesce and reconstruct its
++ *    background hardware session.
+  *
+  * NOTE: If your driver is image based, then you should subclass #FpImageDevice
+  * instead. #FpImageDevice based drivers use a different way of interacting
+diff --git a/tests/test-fpi-device.c b/tests/test-fpi-device.c
+index 33013bc7c8512e94da584ec50dd368443d263047..2f1e1a38cb21a3dd4a37e2cf43f7014b536e4bff 100644
+--- a/tests/test-fpi-device.c
++++ b/tests/test-fpi-device.c
+@@ -2218,12 +2218,10 @@ test_driver_identify_suspend_succeeds (void)
+   g_assert_true (identify_data->called);
+   g_assert (identify_data->match == expected_matched);
+ 
+-  /* Resuming the device does not call resume handler, as the action was
+-   * cancelled already.
+-   */
++  /* The action ended, but the open device still resumes. */
+   fake_dev->last_called_function = NULL;
+   fp_device_resume_sync (device, NULL, &error);
+-  g_assert (fake_dev->last_called_function == NULL);
++  g_assert (fake_dev->last_called_function == dev_class->resume);
+   g_assert_no_error (error);
+ }
+ 
+@@ -2285,7 +2283,7 @@ test_driver_identify_suspend_busy_error (void)
+ 
+   fake_dev->last_called_function = NULL;
+   fp_device_resume_sync (device, NULL, &error);
+-  g_assert (fake_dev->last_called_function == NULL);
++  g_assert (fake_dev->last_called_function == dev_class->resume);
+   g_assert_no_error (error);
+ }
+ 
+@@ -2319,13 +2317,13 @@ test_driver_identify_suspend_while_idle (void)
+   fp_device_suspend (device, NULL, (GAsyncReadyCallback) fp_device_suspend_finish, &error);
+   while (g_main_context_iteration (NULL, FALSE))
+     continue;
+-  g_assert (fake_dev->last_called_function == NULL);
++  g_assert (fake_dev->last_called_function == dev_class->suspend);
+   g_assert_no_error (error);
+ 
+   fp_device_resume (device, NULL, (GAsyncReadyCallback) fp_device_resume_finish, NULL);
+   while (g_main_context_iteration (NULL, FALSE))
+     continue;
+-  g_assert (fake_dev->last_called_function == NULL);
++  g_assert (fake_dev->last_called_function == dev_class->resume);
+   g_assert_no_error (error);
+ }
+ 
