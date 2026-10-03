@@ -1,0 +1,382 @@
+{
+  "artifacts": {
+    "bitmap-48-gallery.bin.gz": {
+      "compressed": {
+        "sha256": "0d76ca79224069dbded17dad289c1cd0390568bfbbf26312e9d7a0a38640049f",
+        "size": 8203
+      },
+      "raw": {
+        "sha256": "97b7f138317863987070ee6a3710b05ded774e46bd8d73c6f57ad2f497e9ad31",
+        "size": 327036
+      }
+    },
+    "bitmap-48-match.bin.gz": {
+      "compressed": {
+        "sha256": "71dcc59bccdf554811777df84ea0371e1e01cbc5181040e596c01f4a183d4d71",
+        "size": 8205
+      },
+      "raw": {
+        "sha256": "27e2fa17e75ffce94d5763053066215025f9a9015ba59afa854fad608ad536ac",
+        "size": 327036
+      }
+    },
+    "bitmap-48-observation.bin.gz": {
+      "compressed": {
+        "sha256": "35e6310b47db91280e22d6739a30bbcdf17429c4a5cd3926b08b264413f8d585",
+        "size": 43
+      },
+      "raw": {
+        "sha256": "d3d0d95cdb0e60878150e5041e78cf5a5c60df01f082304c17d7ad2a96de0b30",
+        "size": 144
+      }
+    },
+    "bitmap-48-probe.bin.gz": {
+      "compressed": {
+        "sha256": "51cafcd2281909157c2d8b8646ecaef99cf8fd33cd8ce60bc0db43cd21c034e1",
+        "size": 3745
+      },
+      "raw": {
+        "sha256": "44df7618782e783638179e67fec13021d13a8cee35c163ac1a3d22add91b0e15",
+        "size": 14178
+      }
+    },
+    "bitmap-56-gallery.bin.gz": {
+      "compressed": {
+        "sha256": "0d76ca79224069dbded17dad289c1cd0390568bfbbf26312e9d7a0a38640049f",
+        "size": 8203
+      },
+      "raw": {
+        "sha256": "97b7f138317863987070ee6a3710b05ded774e46bd8d73c6f57ad2f497e9ad31",
+        "size": 327036
+      }
+    },
+    "bitmap-56-match.bin.gz": {
+      "compressed": {
+        "sha256": "903c1679ea1dcbb7a55cd9db30a944a34a813ca25048fd87b8cfd0b14aef5da0",
+        "size": 8196
+      },
+      "raw": {
+        "sha256": "578c719aa2d9a8ddd7bea8d4e25c424aa318b654f9d9400995b09d3f22efb9ab",
+        "size": 327036
+      }
+    },
+    "bitmap-56-observation.bin.gz": {
+      "compressed": {
+        "sha256": "1e7c3927b80d2550e1b4a1f0aa54db6d42bcf8922ca6cf9401cdb38db20aba51",
+        "size": 42
+      },
+      "raw": {
+        "sha256": "167e5657c88d08f53d9cca85f1f91a8d7cb2b3a27b0969d08514ab521b413b75",
+        "size": 144
+      }
+    },
+    "bitmap-56-probe.bin.gz": {
+      "compressed": {
+        "sha256": "7557a4056f889e2c8a47bc3f7b5a0f7986281ed857a7a3777beec11cca76a79e",
+        "size": 3744
+      },
+      "raw": {
+        "sha256": "fc1883567433dce088c7a600e0c0947db62e557d99958a2d10d276dd20b58c46",
+        "size": 14178
+      }
+    },
+    "order-1-gallery.bin.gz": {
+      "compressed": {
+        "sha256": "99525ba91f93f774fb9d80e87c68ebf41d85cd418f0cef328b15844d5776095a",
+        "size": 9374
+      },
+      "raw": {
+        "sha256": "fb74eb8ce950adcbef355b502cc90ad7283edb01660642cf0d62c4afadfce75b",
+        "size": 331804
+      }
+    },
+    "order-1-match.bin.gz": {
+      "compressed": {
+        "sha256": "fd3f0262c8a998b35309087f60d95ab1979c6fb1ec2ba7acda3d04257de6d3da",
+        "size": 9385
+      },
+      "raw": {
+        "sha256": "0e22742f175393b2489c4fe4cc6588a381f8c4a490d1091379b1bc156a85538a",
+        "size": 331804
+      }
+    },
+    "order-1-observation.bin.gz": {
+      "compressed": {
+        "sha256": "4f8f0647e580b223a7b186bd7924abc6cad3c939ee5b25ae6cf9f070687a14b0",
+        "size": 42
+      },
+      "raw": {
+        "sha256": "fcffade6a4bd2be0503e343b2f4b60847d0be820f108b0528573f3f13a2093e1",
+        "size": 144
+      }
+    },
+    "order-1-probe.bin.gz": {
+      "compressed": {
+        "sha256": "f16812b14317e30bbdaf9567783cd591ebb27689165809308316d0d10dd08b79",
+        "size": 3744
+      },
+      "raw": {
+        "sha256": "0aaae7b1f9ad5091260cb40d271fbc9614c67354ceb0e2ae6fa5bfc68d695e73",
+        "size": 14178
+      }
+    },
+    "order-2-gallery.bin.gz": {
+      "compressed": {
+        "sha256": "9029340d030fdc262ba639a791c38add92861b5c267c7a23d08c6d46ddaefe2e",
+        "size": 9374
+      },
+      "raw": {
+        "sha256": "b5f03f8ad13c631084b46c922cc6c043e97c540a637943d2e905c68577e22f14",
+        "size": 331804
+      }
+    },
+    "order-2-match.bin.gz": {
+      "compressed": {
+        "sha256": "3c2065a31ba4dad8599b53528868f8142771d5d2f87da1d854a8b0f3180c8082",
+        "size": 9381
+      },
+      "raw": {
+        "sha256": "5e34de775fce3f0888ff4647d732b600d30f67c1cd721d76f1a456c85c5117b5",
+        "size": 331804
+      }
+    },
+    "order-2-observation.bin.gz": {
+      "compressed": {
+        "sha256": "dea5c76020e1cb5a51594d5cb41d85dfe1d7329d581040c963549054b8934b9d",
+        "size": 47
+      },
+      "raw": {
+        "sha256": "5a85b1c78c260d8101926b6eac6d8d9dc12f6040d3d880dc9d4ac43bfb365b23",
+        "size": 144
+      }
+    },
+    "order-2-probe.bin.gz": {
+      "compressed": {
+        "sha256": "f16812b14317e30bbdaf9567783cd591ebb27689165809308316d0d10dd08b79",
+        "size": 3744
+      },
+      "raw": {
+        "sha256": "0aaae7b1f9ad5091260cb40d271fbc9614c67354ceb0e2ae6fa5bfc68d695e73",
+        "size": 14178
+      }
+    }
+  },
+  "dll": {
+    "package_version": "2.0.310.900",
+    "sha256": "6673db3874fea66a58e2da29e371d797b890c767ba0491134d4a372c5b27e3b4"
+  },
+  "input_driver_source_sha256": "d4245006d1e8508f8a38ef7f66e62c0f819a3153a737c87010b15602164592dc",
+  "mingw": "16.2.0",
+  "native": {
+    "matcher_rva": "0x5edb0",
+    "observations": {
+      "bitmap-48": {
+        "direct_affine": [
+          256,
+          0,
+          0,
+          0,
+          256,
+          0
+        ],
+        "log": "algorithm=Milan_v_3.01.09.10.50 status=0 score=100 winner=1 relation-count=42 size=327036",
+        "queue_ranks": [
+          0,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1
+        ],
+        "relation_count": 42,
+        "routed_affine": [
+          256,
+          0,
+          0,
+          0,
+          256,
+          0
+        ],
+        "score": 100,
+        "status": 0,
+        "winner": 1
+      },
+      "bitmap-56": {
+        "direct_affine": [
+          256,
+          0,
+          0,
+          0,
+          256,
+          0
+        ],
+        "log": "algorithm=Milan_v_3.01.09.10.50 status=0 score=-7 winner=-1 relation-count=0 size=327036",
+        "queue_ranks": [
+          0,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1
+        ],
+        "relation_count": 0,
+        "routed_affine": [
+          256,
+          0,
+          0,
+          0,
+          256,
+          0
+        ],
+        "score": -7,
+        "status": 0,
+        "winner": -1
+      },
+      "order-1": {
+        "direct_affine": [
+          256,
+          0,
+          0,
+          0,
+          256,
+          0
+        ],
+        "log": "algorithm=Milan_v_3.01.09.10.50 status=0 score=100 winner=1 relation-count=42 size=331804",
+        "queue_ranks": [
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1
+        ],
+        "relation_count": 42,
+        "routed_affine": [
+          256,
+          0,
+          0,
+          0,
+          256,
+          0
+        ],
+        "score": 100,
+        "status": 0,
+        "winner": 1
+      },
+      "order-2": {
+        "direct_affine": [
+          256,
+          0,
+          1024,
+          0,
+          256,
+          0
+        ],
+        "log": "algorithm=Milan_v_3.01.09.10.50 status=0 score=100 winner=2 relation-count=42 size=331804",
+        "queue_ranks": [
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1
+        ],
+        "relation_count": 42,
+        "routed_affine": [
+          256,
+          0,
+          0,
+          0,
+          256,
+          0
+        ],
+        "score": 100,
+        "status": 0,
+        "winner": 2
+      }
+    },
+    "packer": [
+      "templateGetPackedSize",
+      "templatePack"
+    ],
+    "repetitions_per_case": 2
+  },
+  "origin": "mathematical generators only; no biometric captures, seeds or derivatives",
+  "schema": "goodix-synthetic-native-match/v1",
+  "scope": "four serialized type12/profile9 match-only calls; packed galleries and scoped decision/rank projection",
+  "sources": {
+    "tests/native-match/generate.py": "b256b47de78065bed750d9671ca04dd07ed0919c2680f8c4762e0909e117ac9e",
+    "tests/native-match/native.c": "5681e1b0ce986599596b33e6e77a1b2a87bb82f2c3a0a07b292ef0b64c1a051e",
+    "tests/test-goodix53x5-milan-native-match-format.h": "64c96960421164527ce5a432dd6f7abab46b4ecf117effee559742a9d9731018",
+    "tests/test-goodix53x5-milan-native-match-inputs.c": "2f821911efe95382d07545a348ab37aec3ef74a29e6c3bfd638abe6dde6ca3a2",
+    "tests/test-goodix53x5-milan-state-study-assertions.c": "8f5f738ce81dfc7a15743185d47be8981945182f74db00967ff04d3ee3d50d24",
+    "tests/test-goodix53x5-milan-state-study-fixtures.c": "4e7645831a67a170d05f2ccf664cf48b178c28e4aa6957cb04b3cc206d76224a",
+    "tests/test-goodix53x5-milan-state-study-support.h": "eefaa44f2a47519ca4a50f9fd8b9e7006294a90db5632fbe5cceb2ae63eed9e1",
+    "tests/test-goodix53x5-milan-state-support.c": "535cf76b65efe8fde71ff3993f74e7ede950146adae38270c46ccee63b0aa89b",
+    "tests/test-goodix53x5-milan-state-support.h": "290d34ada7eace7334166a8f1e0b1a9d34d39c7ffb37774e4ce31442e3d79259"
+  },
+  "storage": {
+    "filename": "",
+    "format": "single-member gzip",
+    "level": 9,
+    "mtime": 0,
+    "zlib": "1.3.2"
+  },
+  "wine": "wine-11.16"
+}

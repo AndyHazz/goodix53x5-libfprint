@@ -21,5 +21,6 @@
 
 #include "fpi-device.h"
 
+#define FPI_TYPE_DEVICE_GOODIX53X5 (fpi_device_goodix53x5_get_type ())
 G_DECLARE_FINAL_TYPE (FpiDeviceGoodix53x5, fpi_device_goodix53x5, FPI,
                       DEVICE_GOODIX53X5, FpDevice)

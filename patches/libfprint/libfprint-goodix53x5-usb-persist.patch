@@ -1,0 +1,18 @@
+Libfprint-Goodix53x5-Usb-Persist-Patch: 1
+Base-Revision: 0c97a47d8ef405cd577b87058c1e89cae9d242e7
+Base-Tag: v1.94.10
+
+diff --git a/libfprint/fpi-device.c b/libfprint/fpi-device.c
+--- a/libfprint/fpi-device.c
++++ b/libfprint/fpi-device.c
+@@ -1771,6 +1771,10 @@ fpi_device_configure_wakeup (FpDevice *device, gboolean enabled)
+         if (res < 0)
+           g_debug ("Failed to set %s to %s", sysfs_wakeup, wakeup_command);
+ 
++        /* The private Goodix stack manages persist through its exact-ID rule. */
++        if (g_strcmp0 (FP_DEVICE_GET_CLASS (device)->id, "goodix53x5") == 0)
++          break;
++
+         /* Persist means that the kernel tries to keep the USB device open
+          * in case it is "replugged" due to suspend.
+          * This is not helpful, as it will receive a reset and will be in a bad

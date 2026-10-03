@@ -1,0 +1,128 @@
+{
+  "artifacts": {
+    "natural-input.bin": {
+      "sha256": "d4364b9de95180689bb23c0fbaff616cb7d427ad97124b48598780e2f94136d1",
+      "size": 57024
+    },
+    "natural-output.bin": {
+      "sha256": "98d16ed6a477df7c670a5f79f04733886915b17dbce9e40ef7c5eb7eb75f8cad",
+      "size": 912936
+    },
+    "temporal-0-input.bin": {
+      "sha256": "cf912e3200949f02970654d947f7123acefcb7990e604c1f09324e3ab0332c9f",
+      "size": 66528
+    },
+    "temporal-0-output.bin": {
+      "sha256": "32b4adbb3d142a7b63837b2923b3fe901c52b60b131dd2bb1a52b630a862dab1",
+      "size": 836770
+    },
+    "temporal-800-input.bin": {
+      "sha256": "25d1e1eddc62b29a4d86e01d71cbf39e9685b754f305119240352d039ca3eb69",
+      "size": 66528
+    },
+    "temporal-800-output.bin": {
+      "sha256": "8b19be2e10216f2352fceac4bea33b49fb4db7a3a9b6cf10119bac20244855ab",
+      "size": 836770
+    }
+  },
+  "dll": {
+    "package_version": "2.0.310.900",
+    "sha256": "6673db3874fea66a58e2da29e371d797b890c767ba0491134d4a372c5b27e3b4"
+  },
+  "mingw": "16.2.0",
+  "native": {
+    "history_count_rva": "0x1dc9a4",
+    "history_reference_rva": "0x1dc9b0",
+    "observations": {
+      "natural": [
+        "call=1 status=0 quality=100 coverage=100 history=1",
+        "call=2 status=0 quality=100 coverage=100 history=2",
+        "call=3 status=0 quality=100 coverage=100 history=3",
+        "call=4 status=0 quality=100 coverage=100 history=4",
+        "call=5 status=30001 quality=93 coverage=100 history=5",
+        "call=6 status=30001 quality=93 coverage=100 history=6",
+        "call=7 status=30001 quality=93 coverage=100 history=7",
+        "call=8 status=30001 quality=93 coverage=100 history=8",
+        "call=9 status=30001 quality=93 coverage=100 history=9",
+        "call=10 status=30001 quality=93 coverage=100 history=10",
+        "call=11 status=30001 quality=93 coverage=100 history=11",
+        "call=12 status=30001 quality=93 coverage=100 history=12",
+        "call=13 status=30001 quality=93 coverage=100 history=13",
+        "call=14 status=30001 quality=93 coverage=100 history=14",
+        "call=15 status=30001 quality=93 coverage=100 history=15",
+        "call=16 status=30001 quality=93 coverage=100 history=16",
+        "call=17 status=30001 quality=93 coverage=100 history=17",
+        "call=18 status=30001 quality=93 coverage=100 history=18",
+        "call=19 status=30001 quality=93 coverage=100 history=19",
+        "call=20 status=30001 quality=93 coverage=100 history=20",
+        "call=21 status=30001 quality=93 coverage=100 history=21",
+        "call=22 status=30001 quality=93 coverage=100 history=22",
+        "call=23 status=30001 quality=100 coverage=100 history=23",
+        "call=24 status=30001 quality=100 coverage=100 history=24"
+      ],
+      "temporal-0": [
+        "call=1 status=0 mode=6 apply=0 history=1",
+        "call=2 status=0 mode=6 apply=0 history=2",
+        "call=3 status=0 mode=6 apply=0 history=3",
+        "call=4 status=0 mode=6 apply=0 history=4",
+        "call=5 status=0 mode=6 apply=0 history=5",
+        "call=6 status=0 mode=6 apply=0 history=6",
+        "call=7 status=0 mode=6 apply=0 history=7",
+        "call=8 status=0 mode=6 apply=0 history=8",
+        "call=9 status=0 mode=6 apply=0 history=9",
+        "call=10 status=0 mode=6 apply=0 history=10",
+        "call=11 status=0 mode=6 apply=0 history=11",
+        "call=12 status=0 mode=6 apply=0 history=12",
+        "call=13 status=0 mode=6 apply=0 history=13",
+        "call=14 status=0 mode=6 apply=0 history=14",
+        "call=15 status=0 mode=6 apply=0 history=15",
+        "call=16 status=0 mode=6 apply=0 history=16",
+        "call=17 status=0 mode=6 apply=0 history=17",
+        "call=18 status=0 mode=6 apply=0 history=18",
+        "call=19 status=0 mode=6 apply=0 history=19",
+        "call=20 status=0 mode=6 apply=0 history=20",
+        "call=21 status=50001 mode=9 apply=1 history=21",
+        "call=22 status=50001 mode=9 apply=1 history=22"
+      ],
+      "temporal-800": [
+        "call=1 status=50001 mode=9 apply=1 history=1",
+        "call=2 status=50001 mode=9 apply=1 history=2",
+        "call=3 status=50001 mode=9 apply=1 history=3",
+        "call=4 status=50001 mode=9 apply=1 history=4",
+        "call=5 status=50001 mode=9 apply=1 history=5",
+        "call=6 status=50001 mode=9 apply=1 history=6",
+        "call=7 status=50001 mode=9 apply=1 history=7",
+        "call=8 status=50001 mode=9 apply=1 history=8",
+        "call=9 status=50001 mode=9 apply=1 history=9",
+        "call=10 status=50001 mode=9 apply=1 history=10",
+        "call=11 status=50001 mode=9 apply=1 history=11",
+        "call=12 status=50001 mode=9 apply=1 history=12",
+        "call=13 status=50001 mode=9 apply=1 history=13",
+        "call=14 status=50001 mode=9 apply=1 history=14",
+        "call=15 status=50001 mode=9 apply=1 history=15",
+        "call=16 status=50001 mode=9 apply=1 history=16",
+        "call=17 status=50001 mode=9 apply=1 history=17",
+        "call=18 status=50001 mode=9 apply=1 history=18",
+        "call=19 status=50001 mode=9 apply=1 history=19",
+        "call=20 status=50001 mode=9 apply=1 history=20",
+        "call=21 status=50001 mode=9 apply=1 history=21",
+        "call=22 status=0 mode=6 apply=1 history=22"
+      ]
+    },
+    "preprocessor_export": "preprocessor",
+    "profile": 9,
+    "reference_age_rva": "0x1e62d0",
+    "repetitions_per_case": 2,
+    "sensor_type": 12,
+    "temporal_rva": "0x6b290"
+  },
+  "origin": "fixed mathematical arithmetic only; no biometric captures, seeds or derivatives",
+  "schema": "goodix-synthetic-native-preprocess/v1",
+  "scope": "complete per-call image/mask and observed history projection; not every calibration field",
+  "sources": {
+    "tests/native-preprocess/generate.py": "09c2d93054f9ca862a6206845dbefd85a672fa01d9cde880ba7ab7e22d6360ce",
+    "tests/native-preprocess/native.c": "d9ad820a575016ed8eb35ea6952830b197786fdcab8fb4b04af3853cae4c3a1f",
+    "tests/test-goodix53x5-milan-native-preprocess-format.h": "ded3cdd95abb43ba7214e1b29e692940ee1f9d6a48b8abf367664d62efb8759c"
+  },
+  "wine": "wine-11.16"
+}

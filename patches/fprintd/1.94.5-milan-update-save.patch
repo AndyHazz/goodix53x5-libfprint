@@ -1,0 +1,62 @@
+Fprintd-Milan-Update-Save-Patch: 1
+Base-Revision: b54a007ccf58ac0ae074c7151b223f35cbd17306
+Base-Tag: v1.94.5
+
+diff --git a/src/device.c b/src/device.c
+index 4de4a105c640f27378b74432db09a97b16fdf28a..772d6de669fe9913e4f741cf20d6533decdfae74 100644
+--- a/src/device.c
++++ b/src/device.c
+@@ -1563,9 +1563,11 @@ verify_cb (FpDevice *dev, GAsyncResult *res, void *user_data)
+   FprintDevicePrivate *priv = fprint_device_get_instance_private (rdev);
+   gboolean success;
+   const char *name;
+-  gboolean match;
++  gboolean match = FALSE;
++  gboolean updated = FALSE;
+ 
+-  success = fp_device_verify_finish (dev, res, &match, NULL, &error);
++  success = fp_device_verify_finish_with_update (dev, res, &match, NULL,
++                                                  &updated, &error);
+   g_assert (!!success == !error);
+   name = verify_result_to_name (match, error);
+ 
+@@ -1583,6 +1585,13 @@ verify_cb (FpDevice *dev, GAsyncResult *res, void *user_data)
+     }
+   else
+     {
++      if (success && match && updated)
++        {
++          int r = store.print_data_save (priv->verify_data);
++
++          if (r != 0)
++            g_warning ("Failed to save adaptively updated Milan verify print: %d", r);
++        }
+       g_clear_object (&priv->verify_data);
+ 
+       if (error)
+@@ -1609,8 +1618,10 @@ identify_cb (FpDevice *dev, GAsyncResult *res, void *user_data)
+   FprintDevicePrivate *priv = fprint_device_get_instance_private (rdev);
+   const char *name;
+   gboolean success;
++  gboolean updated = FALSE;
+ 
+-  success = fp_device_identify_finish (dev, res, &match, NULL, &error);
++  success = fp_device_identify_finish_with_update (dev, res, &match, NULL,
++                                                    &updated, &error);
+   g_assert (!!success == !error);
+   name = verify_result_to_name (match != NULL, error);
+ 
+@@ -1628,6 +1639,13 @@ identify_cb (FpDevice *dev, GAsyncResult *res, void *user_data)
+     }
+   else
+     {
++      if (success && match && updated)
++        {
++          int r = store.print_data_save (match);
++
++          if (r != 0)
++            g_warning ("Failed to save adaptively updated Milan identify print: %d", r);
++        }
+       g_clear_pointer (&priv->identify_data, g_ptr_array_unref);
+ 
+       if (error)
