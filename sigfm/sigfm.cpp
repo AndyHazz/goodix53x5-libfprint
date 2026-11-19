@@ -32,12 +32,15 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <tuple>
 
-#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/features2d.hpp>
+#include <opencv2/imgproc.hpp>
 #include <vector>
 
 namespace {

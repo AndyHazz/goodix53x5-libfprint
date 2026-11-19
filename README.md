@@ -2,6 +2,8 @@
 
 A libfprint driver for the Goodix HTK32 fingerprint sensor found in the **Dell XPS 13 9305**, the **Dell XPS 13 7390**, the **Dell XPS 15 9570**, the **Dell XPS 15 7590**, the **Dell XPS 15 9575** and possibly other laptops using the `27c6:5335`, `27c6:5385` or `27c6:5395` USB device.
 
+> **Alternative:** [seaweeduk/goodix53x5-libfprint](https://github.com/seaweeduk/goodix53x5-libfprint) replaces SIGFM with a port of the Windows driver's native matcher, ships Debian, Ubuntu, Fedora and AUR packages, and can check whether an unlisted Goodix sensor is compatible. It's a separate project with a different architecture, so it's worth trying if this driver doesn't work well for you or your sensor isn't listed here.
+
 ## Hardware
 
 - **Vendor ID:** `0x27c6`
@@ -41,7 +43,7 @@ The current preprocessing pipeline is shown below:
 
 **Arch Linux:**
 ```
-sudo pacman -S --needed git base-devel meson ninja pkgconf glib2 libgusb opencv openssl fprintd
+sudo pacman -S --needed git base-devel meson ninja pkgconf glib2 glib2-devel libgusb opencv openssl fprintd
 ```
 
 **Fedora:**
