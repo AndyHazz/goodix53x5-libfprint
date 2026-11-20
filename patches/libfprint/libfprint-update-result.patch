@@ -1,0 +1,383 @@
+Libfprint-Update-Result-Patch: 1
+Base-Revision: 0c97a47d8ef405cd577b87058c1e89cae9d242e7
+Base-Tag: v1.94.10
+
+diff --git a/libfprint/fp-device-private.h b/libfprint/fp-device-private.h
+index 1c3702fa42dc6c68b35384b369751775c9aa8346..534cfecc363a6f9b6d8f608e8321c4d8b669186e 100644
+--- a/libfprint/fp-device-private.h
++++ b/libfprint/fp-device-private.h
+@@ -118,6 +118,7 @@ typedef struct
+ 
+   gboolean       result_reported;
+   FpPrint       *match;
++  gboolean       updated;
+   FpPrint       *print;
+   GError        *error;
+ 
+diff --git a/libfprint/fp-device.c b/libfprint/fp-device.c
+index 6040c1be58ef1b2680a6dce8d4c67da99fd77f35..2f9413a758bf08f74c5fb3e2181394c57c9ad8a8 100644
+--- a/libfprint/fp-device.c
++++ b/libfprint/fp-device.c
+@@ -1350,17 +1350,41 @@ fp_device_verify_finish (FpDevice     *device,
+                          gboolean     *match,
+                          FpPrint     **print,
+                          GError      **error)
++{
++  return fp_device_verify_finish_with_update (device, result, match, print,
++                                               NULL, error);
++}
++
++/**
++ * fp_device_verify_finish_with_update:
++ * @device: A #FpDevice
++ * @result: A #GAsyncResult
++ * @match: (out): Whether the user presented the correct finger
++ * @print: (out) (transfer full) (nullable): Location to store the scanned print, or %NULL to ignore
++ * @updated: (out) (nullable): Whether the matched enrolled print was updated
++ * @error: Return location for errors, or %NULL to ignore
++ *
++ * Finishes an asynchronous verify operation and returns the private Milan
++ * in-place update result after terminal completion.
++ *
++ * Returns: (type void): %FALSE on error, %TRUE otherwise
++ */
++gboolean
++fp_device_verify_finish_with_update (FpDevice     *device,
++                                     GAsyncResult *result,
++                                     gboolean     *match,
++                                     FpPrint     **print,
++                                     gboolean     *updated,
++                                     GError      **error)
+ {
+   gint res;
++  FpMatchData *data;
+ 
+   res = g_task_propagate_int (G_TASK (result), error);
++  data = g_task_get_task_data (G_TASK (result));
+ 
+   if (print)
+     {
+-      FpMatchData *data;
+-
+-      data = g_task_get_task_data (G_TASK (result));
+-
+       *print = data ? data->print : NULL;
+       if (*print)
+         g_object_ref (*print);
+@@ -1368,6 +1392,8 @@ fp_device_verify_finish (FpDevice     *device,
+ 
+   if (match)
+     *match = res == FPI_MATCH_SUCCESS;
++  if (updated)
++    *updated = res == FPI_MATCH_SUCCESS && data && data->updated;
+ 
+   return res != FPI_MATCH_ERROR;
+ }
+@@ -1492,10 +1518,38 @@ fp_device_identify_finish (FpDevice     *device,
+                            FpPrint     **match,
+                            FpPrint     **print,
+                            GError      **error)
++{
++  return fp_device_identify_finish_with_update (device, result, match, print,
++                                                 NULL, error);
++}
++
++/**
++ * fp_device_identify_finish_with_update:
++ * @device: A #FpDevice
++ * @result: A #GAsyncResult
++ * @match: (out) (transfer full) (nullable): Location for the matched #FpPrint, or %NULL
++ * @print: (out) (transfer full) (nullable): Location for the new #FpPrint, or %NULL
++ * @updated: (out) (nullable): Whether the matched gallery print was updated
++ * @error: Return location for errors, or %NULL to ignore
++ *
++ * Finishes an asynchronous identify operation and returns the private Milan
++ * in-place update result after terminal completion.
++ *
++ * Returns: (type void): %FALSE on error, %TRUE otherwise
++ */
++gboolean
++fp_device_identify_finish_with_update (FpDevice     *device,
++                                       GAsyncResult *result,
++                                       FpPrint     **match,
++                                       FpPrint     **print,
++                                       gboolean     *updated,
++                                       GError      **error)
+ {
+   FpMatchData *data;
++  gboolean success;
+ 
+   data = g_task_get_task_data (G_TASK (result));
++  success = g_task_propagate_boolean (G_TASK (result), error);
+ 
+   if (print)
+     {
+@@ -1510,7 +1564,10 @@ fp_device_identify_finish (FpDevice     *device,
+         g_object_ref (*match);
+     }
+ 
+-  return g_task_propagate_boolean (G_TASK (result), error);
++  if (updated)
++    *updated = success && data && data->match && data->updated;
++
++  return success;
+ }
+ 
+ /**
+diff --git a/libfprint/fp-device.h b/libfprint/fp-device.h
+index e82cb5352c273df0f9d42f4be6f5cbfade9f5357..d4fcf1778309e157639942a09853c9ac0caa74a3 100644
+--- a/libfprint/fp-device.h
++++ b/libfprint/fp-device.h
+@@ -323,11 +323,23 @@ gboolean fp_device_verify_finish (FpDevice     *device,
+                                   gboolean     *match,
+                                   FpPrint     **print,
+                                   GError      **error);
++gboolean fp_device_verify_finish_with_update (FpDevice     *device,
++                                               GAsyncResult *result,
++                                               gboolean     *match,
++                                               FpPrint     **print,
++                                               gboolean     *updated,
++                                               GError      **error);
+ gboolean fp_device_identify_finish (FpDevice     *device,
+                                     GAsyncResult *result,
+                                     FpPrint     **match,
+                                     FpPrint     **print,
+                                     GError      **error);
++gboolean fp_device_identify_finish_with_update (FpDevice     *device,
++                                                 GAsyncResult *result,
++                                                 FpPrint     **match,
++                                                 FpPrint     **print,
++                                                 gboolean     *updated,
++                                                 GError      **error);
+ FpImage * fp_device_capture_finish (FpDevice     *device,
+                                     GAsyncResult *result,
+                                     GError      **error);
+diff --git a/libfprint/fpi-device.c b/libfprint/fpi-device.c
+index a1be30c0e6c5cdf4d68bf6cbb6061b66c0042561..b1e8e3bd41b92e63a83cf7b731176668a519d3e7 100644
+--- a/libfprint/fpi-device.c
++++ b/libfprint/fpi-device.c
+@@ -1315,6 +1315,22 @@ fpi_device_enroll_complete (FpDevice *device, FpPrint *print, GError *error)
+ void
+ fpi_device_verify_complete (FpDevice *device,
+                             GError   *error)
++{
++  fpi_device_verify_complete_with_update (device, FALSE, error);
++}
++
++/**
++ * fpi_device_verify_complete_with_update:
++ * @device: The #FpDevice
++ * @updated: Whether the successfully matched enrolled print was updated
++ * @error: A #GError if result is %FPI_MATCH_ERROR
++ *
++ * Finish an ongoing verify operation with the private Milan update result.
++ */
++void
++fpi_device_verify_complete_with_update (FpDevice *device,
++                                        gboolean  updated,
++                                        GError   *error)
+ {
+   FpDevicePrivate *priv = fp_device_get_instance_private (device);
+   FpMatchData *data;
+@@ -1343,6 +1359,7 @@ fpi_device_verify_complete (FpDevice *device,
+         }
+       else
+         {
++          data->updated = updated && data->match != NULL;
+           fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_INT,
+                                           GINT_TO_POINTER (data->match != NULL ? FPI_MATCH_SUCCESS : FPI_MATCH_FAIL));
+         }
+@@ -1380,6 +1397,22 @@ fpi_device_verify_complete (FpDevice *device,
+ void
+ fpi_device_identify_complete (FpDevice *device,
+                               GError   *error)
++{
++  fpi_device_identify_complete_with_update (device, FALSE, error);
++}
++
++/**
++ * fpi_device_identify_complete_with_update:
++ * @device: The #FpDevice
++ * @updated: Whether the successfully matched gallery print was updated
++ * @error: (nullable) (transfer full): The #GError or %NULL on success
++ *
++ * Finish an ongoing identify operation with the private Milan update result.
++ */
++void
++fpi_device_identify_complete_with_update (FpDevice *device,
++                                          gboolean  updated,
++                                          GError   *error)
+ {
+   FpDevicePrivate *priv = fp_device_get_instance_private (device);
+   FpMatchData *data;
+@@ -1408,6 +1441,7 @@ fpi_device_identify_complete (FpDevice *device,
+         }
+       else
+         {
++          data->updated = updated && data->match != NULL;
+           fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_BOOL, GUINT_TO_POINTER (TRUE));
+         }
+     }
+diff --git a/libfprint/fpi-device.h b/libfprint/fpi-device.h
+index ab154bc1f55fd70702222fff2135b5ca825474c0..ca0c540e71ec2ffb56012856e704d02b6d6739b1 100644
+--- a/libfprint/fpi-device.h
++++ b/libfprint/fpi-device.h
+@@ -289,8 +289,14 @@ void fpi_device_enroll_complete (FpDevice *device,
+                                  GError   *error);
+ void fpi_device_verify_complete (FpDevice *device,
+                                  GError   *error);
++void fpi_device_verify_complete_with_update (FpDevice *device,
++                                             gboolean  updated,
++                                             GError   *error);
+ void fpi_device_identify_complete (FpDevice *device,
+                                    GError   *error);
++void fpi_device_identify_complete_with_update (FpDevice *device,
++                                               gboolean  updated,
++                                               GError   *error);
+ void fpi_device_capture_complete (FpDevice *device,
+                                   FpImage  *image,
+                                   GError   *error);
+diff --git a/libfprint/fpi-print.c b/libfprint/fpi-print.c
+index 00289b4ec6598a2395da4b909ce06d54b44f0204..8a6fc839b3405d1406ca6e716ea1b45e4c9411b0 100644
+--- a/libfprint/fpi-print.c
++++ b/libfprint/fpi-print.c
+@@ -97,6 +97,24 @@ fpi_print_set_device_stored (FpPrint *print,
+   g_object_notify (G_OBJECT (print), "device-stored");
+ }
+ 
++/**
++ * fpi_print_set_raw_data:
++ * @print: A raw #FpPrint
++ * @data: (transfer none): Replacement driver data
++ *
++ * Replaces the private driver data of an existing raw print.
++ */
++void
++fpi_print_set_raw_data (FpPrint  *print,
++                        GVariant *data)
++{
++  g_return_if_fail (FP_IS_PRINT (print));
++  g_return_if_fail (print->type == FPI_PRINT_RAW);
++  g_return_if_fail (data != NULL);
++
++  g_object_set (print, "fpi-data", data, NULL);
++}
++
+ /* XXX: This is the old version, but wouldn't it be smarter to instead
+  * use the highest quality mintutiae? Possibly just using bz_prune from
+  * upstream? */
+diff --git a/libfprint/fpi-print.h b/libfprint/fpi-print.h
+index f3e72b40596860f4ebd6fca2c03e8769a47785c7..5be00083a11fe95f3f2c897fe3a27cda15fd086a 100644
+--- a/libfprint/fpi-print.h
++++ b/libfprint/fpi-print.h
+@@ -38,6 +38,9 @@ void     fpi_print_set_type (FpPrint     *print,
+ void     fpi_print_set_device_stored (FpPrint *print,
+                                       gboolean device_stored);
+ 
++void     fpi_print_set_raw_data (FpPrint  *print,
++                                 GVariant *data);
++
+ gboolean fpi_print_add_from_image (FpPrint *print,
+                                    FpImage *image,
+                                    GError **error);
+diff --git a/tests/test-fpi-device.c b/tests/test-fpi-device.c
+index 33013bc7c8512e94da584ec50dd368443d263047..a3e075e5a15974a486021d14ee07d8d5302d0fe1 100644
+--- a/tests/test-fpi-device.c
++++ b/tests/test-fpi-device.c
+@@ -3387,6 +3387,88 @@ test_driver_retry_error_types (void)
+   g_test_assert_expected_messages ();
+ }
+ 
++typedef struct
++{
++  gboolean done;
++  gboolean success;
++  gboolean match;
++  gboolean updated;
++  GError  *complete_error;
++  GError  *error;
++} UpdateResultData;
++
++static void
++fake_device_verify_update_result (FpDevice *device)
++{
++  FpiDeviceFake *fake_dev = FPI_DEVICE_FAKE (device);
++  UpdateResultData *data = fake_dev->user_data;
++
++  fpi_device_verify_report (device, fake_dev->ret_result, NULL, NULL);
++  fpi_device_verify_complete_with_update (
++    device, TRUE, g_steal_pointer (&data->complete_error));
++}
++
++static void
++verify_update_result_cb (FpDevice     *device,
++                         GAsyncResult *result,
++                         gpointer      user_data)
++{
++  UpdateResultData *data = user_data;
++
++  data->success = fp_device_verify_finish_with_update (
++    device, result, &data->match, NULL, &data->updated, &data->error);
++  data->done = TRUE;
++}
++
++static void
++test_driver_verify_update_result (void)
++{
++  g_autoptr(FpAutoResetClass) dev_class = auto_reset_device_class ();
++  g_autoptr(FpAutoCloseDevice) device = NULL;
++  g_autoptr(FpPrint) enrolled_print = NULL;
++  FpiDeviceFake *fake_dev;
++  UpdateResultData data = { 0 };
++
++  dev_class->verify = fake_device_verify_update_result;
++  device = auto_close_fake_device_new ();
++  enrolled_print = make_fake_print_reffed (device, NULL);
++  fake_dev = FPI_DEVICE_FAKE (device);
++  fake_dev->user_data = &data;
++
++  fake_dev->ret_result = FPI_MATCH_SUCCESS;
++  fp_device_verify (device, enrolled_print, NULL, NULL, NULL, NULL,
++                    (GAsyncReadyCallback) verify_update_result_cb, &data);
++  while (!data.done)
++    g_main_context_iteration (NULL, TRUE);
++  g_assert_true (data.success);
++  g_assert_true (data.match);
++  g_assert_true (data.updated);
++  g_assert_no_error (data.error);
++
++  memset (&data, 0, sizeof (data));
++  fake_dev->ret_result = FPI_MATCH_FAIL;
++  fp_device_verify (device, enrolled_print, NULL, NULL, NULL, NULL,
++                    (GAsyncReadyCallback) verify_update_result_cb, &data);
++  while (!data.done)
++    g_main_context_iteration (NULL, TRUE);
++  g_assert_true (data.success);
++  g_assert_false (data.match);
++  g_assert_false (data.updated);
++  g_assert_no_error (data.error);
++
++  memset (&data, 0, sizeof (data));
++  data.complete_error = fpi_device_error_new (FP_DEVICE_ERROR_GENERAL);
++  fake_dev->ret_result = FPI_MATCH_SUCCESS;
++  fp_device_verify (device, enrolled_print, NULL, NULL, NULL, NULL,
++                    (GAsyncReadyCallback) verify_update_result_cb, &data);
++  while (!data.done)
++    g_main_context_iteration (NULL, TRUE);
++  g_assert_false (data.success);
++  g_assert_false (data.updated);
++  g_assert_error (data.error, FP_DEVICE_ERROR, FP_DEVICE_ERROR_GENERAL);
++  g_clear_error (&data.error);
++}
++
+ int
+ main (int argc, char *argv[])
+ {
+@@ -3453,6 +3535,7 @@ main (int argc, char *argv[])
+   g_test_add_func ("/driver/verify/report_no_cb", test_driver_verify_report_no_callback);
+   g_test_add_func ("/driver/verify/not_reported", test_driver_verify_not_reported);
+   g_test_add_func ("/driver/verify/complete_retry", test_driver_verify_complete_retry);
++  g_test_add_func ("/driver/verify/update_result", test_driver_verify_update_result);
+   g_test_add_func ("/driver/identify", test_driver_identify);
+   g_test_add_func ("/driver/identify/fail", test_driver_identify_fail);
+   g_test_add_func ("/driver/identify/retry", test_driver_identify_retry);

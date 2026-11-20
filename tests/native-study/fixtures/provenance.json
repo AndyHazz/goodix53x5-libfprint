@@ -1,0 +1,67 @@
+{
+  "artifacts": {
+    "coverage-gallery.bin": {
+      "sha256": "307b83993057a2eb21333c0c628a52e334a6a77f7f92cfc168dbba56ba46aab3",
+      "size": 336572
+    },
+    "coverage-match.bin": {
+      "sha256": "4de85945a6185d42785f8ad9c41ea1cf252824592b8ae914df472570de34e80c",
+      "size": 336572
+    },
+    "coverage-study.bin": {
+      "sha256": "fdb517a96236171e14ab1f2fc447fb0f2ebce4cb42a5c431ed011d8856b56d9d",
+      "size": 336572
+    },
+    "probe.bin": {
+      "sha256": "0aaae7b1f9ad5091260cb40d271fbc9614c67354ceb0e2ae6fa5bfc68d695e73",
+      "size": 14178
+    },
+    "tie-gallery.bin": {
+      "sha256": "2400c0a6d19123b55bcb945b73936022640709a13cfa96803e76f9bdf6e10ab6",
+      "size": 336572
+    },
+    "tie-match.bin": {
+      "sha256": "f69c4566c0d79d8aaa78feca1d114ad9ce46cb093fb06126fa5b1ea18fdb07a5",
+      "size": 336572
+    },
+    "tie-study.bin": {
+      "sha256": "ca6d1df335b5c1a2af49f5903091cc32e019f9534a00f37ffd9951469a20a603",
+      "size": 336572
+    }
+  },
+  "dll": {
+    "package_version": "2.0.310.900",
+    "sha256": "6673db3874fea66a58e2da29e371d797b890c767ba0491134d4a372c5b27e3b4"
+  },
+  "input_driver_source_sha256": "d4245006d1e8508f8a38ef7f66e62c0f819a3153a737c87010b15602164592dc",
+  "mingw": "16.2.0",
+  "native": {
+    "matcher_rva": "0x5edb0",
+    "observations": {
+      "coverage": "algorithm=Milan_v_3.01.09.10.50 score=100 winner=2 action=4 selected=3",
+      "tie": "algorithm=Milan_v_3.01.09.10.50 score=100 winner=2 action=4 selected=1"
+    },
+    "packer": [
+      "templateGetPackedSize",
+      "templatePack"
+    ],
+    "repetitions_per_case": 2,
+    "study_rva": "0x44fc0"
+  },
+  "origin": "mathematical test generators only; no personal biometric data or derivatives",
+  "schema": "goodix-synthetic-native-study/v1",
+  "scope": "two competing-candidate serialized matcher-to-study cases; type12/profile9",
+  "sources": {
+    "tests/native-study/generate.py": "dae865749700178a7a3091369b7baeae06758b22604982723a03e539127c1dde",
+    "tests/native-study/native.c": "8919648c9f1cfc5f09df564469c9ee03a61c1967f7aa624c40cc0756d5083137",
+    "tests/test-goodix53x5-milan-native-study-inputs.c": "429664148009f10395edbe4f02f7f0a3f05777573794dcb32e7c728efb1002c4",
+    "tests/test-goodix53x5-milan-state-study-assertions.c": "8f5f738ce81dfc7a15743185d47be8981945182f74db00967ff04d3ee3d50d24",
+    "tests/test-goodix53x5-milan-state-study-candidates.c": "ebdbac4193a89518f967294fe6532c321bd4e5945f5b66887741466179e57723",
+    "tests/test-goodix53x5-milan-state-study-fixtures.c": "4e7645831a67a170d05f2ccf664cf48b178c28e4aa6957cb04b3cc206d76224a",
+    "tests/test-goodix53x5-milan-state-study-support.h": "eefaa44f2a47519ca4a50f9fd8b9e7006294a90db5632fbe5cceb2ae63eed9e1",
+    "tests/test-goodix53x5-milan-state-support.c": "535cf76b65efe8fde71ff3993f74e7ede950146adae38270c46ccee63b0aa89b",
+    "tests/test-goodix53x5-milan-state-support.h": "290d34ada7eace7334166a8f1e0b1a9d34d39c7ffb37774e4ce31442e3d79259",
+    "tests/test-goodix53x5-milan-state-tests.h": "787a2d215719adefaf5ee63b7c1ffef1d1d98f4602b7c4985c396159c3805c16"
+  },
+  "wine": "wine-11.16"
+}

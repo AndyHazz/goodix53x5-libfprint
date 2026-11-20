@@ -1,13 +1,14 @@
-# Claude Code and related AI assistant artifacts
-.claude/
-CLAUDE.md
-CLAUDE.local.md
-docs/superpowers/
-
-# Local build and research artifacts
 .build/
 builddir/
 results/
-tools/
+tools/*
+!tools/milan-parity/
+!tools/milan-parity/**
+tools/milan-parity/private/
+tools/milan-parity/**/__pycache__/
+tools/milan-parity/**/*.pyc
+scripts/lib/__pycache__/
 AGENTS.md
 *.pkg.tar.zst
+*.psk
+dist/

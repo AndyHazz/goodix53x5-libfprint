@@ -1,0 +1,5 @@
+# Keep supported Milan sensors attached across USB power loss during hibernation.
+ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="27c6", ATTR{idProduct}=="5335|5385|5395", TEST=="power/persist", ATTR{power/persist}="1"
+
+# Start the paired daemon at enumeration so the first claim finds a ready sensor.
+ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="27c6", ATTR{idProduct}=="5335|5385|5395", TAG+="systemd", ENV{SYSTEMD_WANTS}+="fprintd.service"
