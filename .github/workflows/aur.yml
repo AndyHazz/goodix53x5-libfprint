@@ -1,0 +1,60 @@
+name: AUR
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Published release to push to the AUR, such as 1.1.0
+        required: true
+        type: string
+
+concurrency:
+  group: aur
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish AUR package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check for the AUR key
+        id: key
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [[ -z "$AUR_SSH_PRIVATE_KEY" ]]; then
+            echo "::notice::AUR_SSH_PRIVATE_KEY is not set; publish with packaging/arch/update-aur.sh instead"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository
+        if: steps.key.outputs.enabled == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Push release files to the AUR
+        if: steps.key.outputs.enabled == 'true'
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ inputs.version || github.event.release.tag_name }}
+        run: |
+          install -d -m 0700 ~/.ssh
+          (umask 077 && printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur)
+          # Published at https://aur.archlinux.org/ (SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4).
+          echo 'aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN' > ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/aur -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          packaging/arch/update-aur.sh --yes "${VERSION#v}"

@@ -1,0 +1,12 @@
+etc/fprintd.conf
+usr/bin/fprintd-*
+usr/lib/${DEB_HOST_MULTIARCH}/libfprint-goodix53x5/libfprint-2.so.2*
+usr/lib/${DEB_HOST_MULTIARCH}/security/pam_fprintd.so
+usr/lib/systemd/system/fprintd.service
+usr/lib/udev/rules.d/99-goodix53x5-milan-persist.rules
+usr/libexec/fprintd
+usr/share/dbus-1
+usr/share/locale
+usr/share/man
+usr/share/polkit-1
+debian/pam-configs/fprintd usr/share/pam-configs

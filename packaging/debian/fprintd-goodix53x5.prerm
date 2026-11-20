@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = remove ]; then
+	pam-auth-update --package --remove fprintd
+	if [ -d /run/systemd/system ]; then
+		systemctl stop fprintd.service || true
+	fi
+fi
+
+#DEBHELPER#
+
+exit 0

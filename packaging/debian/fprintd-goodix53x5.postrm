@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = remove ]; then
+	if [ -d /run/systemd/system ]; then
+		systemctl daemon-reload || true
+	fi
+	if command -v udevadm >/dev/null 2>&1; then
+		udevadm control --reload-rules || true
+	fi
+	printf '%s\n' "fprintd-goodix53x5 was removed. Restore the distribution's fingerprint" \
+		"support with: sudo apt install fprintd libpam-fprintd"
+fi
+
+#DEBHELPER#
+
+exit 0

@@ -1,0 +1,50 @@
+#!/bin/sh
+set -e
+
+sensor_present() {
+	for device in /sys/bus/usb/devices/*; do
+		[ "$(cat "$device/idVendor" 2>/dev/null)" = 27c6 ] || continue
+		case "$(cat "$device/idProduct" 2>/dev/null)" in
+			5335|5385|5395) return 0 ;;
+		esac
+	done
+	return 1
+}
+
+if [ "$1" = configure ]; then
+	pam-auth-update --package
+	if command -v udevadm >/dev/null 2>&1; then
+		udevadm control --reload-rules || true
+		udevadm trigger --subsystem-match=usb --attr-match=idVendor=27c6 --action=add || true
+	fi
+	if sensor_present; then
+		sensor=yes
+	else
+		sensor=no
+		printf '%s\n' "fprintd-goodix53x5: no Goodix 27c6:5335, 27c6:5385 or 27c6:5395 sensor" \
+		  "found; other fingerprint readers are not supported." >&2
+	fi
+	if [ -d /run/systemd/system ]; then
+		systemctl daemon-reload || true
+		if [ "$sensor" = yes ]; then
+			# Open the sensor now rather than on the first unlock.
+			systemctl restart fprintd.service || true
+		else
+			systemctl try-restart fprintd.service || true
+		fi
+	fi
+	if [ -z "$2" ]; then
+		printf '%s\n' "fprintd-goodix53x5: enable fingerprint login with:" \
+			"  sudo pam-auth-update --enable fprintd"
+		if ls -d /var/lib/fprint/*/goodix53x5 >/dev/null 2>&1; then
+			printf '%s\n' "fprintd-goodix53x5: existing goodix53x5 prints were found." \
+			  "Prints enrolled with the older sigfm driver are not compatible. If" \
+			  "verification reports invalid data, delete them with fprintd-delete" \
+			  "and enroll again."
+		fi
+	fi
+fi
+
+#DEBHELPER#
+
+exit 0
